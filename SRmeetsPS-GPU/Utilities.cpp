@@ -15,16 +15,6 @@ void cuda_check(std::string file, int line)
 	prev_line = line;
 }
 
-void printMatrix(float* mat, size_t h, size_t w) {
-	for (int i = 0; i < h; i++) {
-		for (int j = 0; j < w; j++) {
-			std::cout << mat[j*h + i] << " ";
-		}
-		std::cout << std::endl;
-	}
-	std::cout << std::endl;
-}
-
 matvar_t* DataHandler::readVariableFromFile(mat_t* matfp, const char* varname) {
 	matvar_t* matvar;
 	matvar = Mat_VarReadInfo(matfp, varname);
@@ -55,7 +45,7 @@ void DataHandler::extractAndCastToFromIntToFloat(float* dest, void* source, size
 	delete[] double_data;
 }
 
-DataHandler::DataHandler() :I(NULL), K(NULL), mask(NULL), z0(NULL), D_val(NULL), D_row(NULL), D_col(NULL) {}
+DataHandler::DataHandler() :I(NULL), K(NULL), mask(NULL), z0(NULL){}
 
 DataHandler::~DataHandler() {
 	freeMemory();
@@ -70,12 +60,6 @@ void DataHandler::freeMemory() {
 		delete[] mask;
 	if (z0 != NULL)
 		delete[] z0;
-	if (D_val != NULL)
-		delete[] D_val;
-	if (D_row != NULL)
-		delete[] D_row;
-	if (D_col != NULL)
-		delete[] D_col;
 }
 
 void DataHandler::loadDataFromMatFiles(char* filename) {
@@ -117,23 +101,36 @@ void DataHandler::loadDataFromMatFiles(char* filename) {
 	extractAndCastToFromDoubleToFloat(z0, matvar->data, (size_t)((I_h / sf)*(I_w / sf)*z0_n));
 	Mat_VarFree(matvar);
 
-	n_D_rows = (int)(I_h*I_w / (sf*sf));
-	n_D_cols = (int)(I_h*I_w);
+	D.n_row = (int)(I_h*I_w / (sf*sf));
+	D.n_col = (int)(I_h*I_w);
 	int n_pix_per_row = (int)(sf*sf);
-	nnz = n_pix_per_row * n_D_rows;
-	D_row = new int[nnz];
-	D_col = new int[nnz];
-	D_val = new float[nnz];
-	for (int i = 0; i < n_D_rows; i++) {
+	D.n_nz = n_pix_per_row * D.n_row;
+	D.row = new int[D.n_nz];
+	D.col = new int[D.n_nz];
+	D.val = new float[D.n_nz];
+	for (int i = 0; i < D.n_row; i++) {
 		for (int j = 0; j < n_pix_per_row; j++) {
-			D_row[i*n_pix_per_row + j] = i; 
-			D_val[i*n_pix_per_row + j] = 1/(sf*sf*sf);
+			D.row[i*n_pix_per_row + j] = i; 
+			D.val[i*n_pix_per_row + j] = 1/(sf*sf);
 		}
 		for (int j = 0; j < sf; j++) {
 			for (int k = 0; k < sf; k++) {
-				D_col[i*n_pix_per_row + int(j*sf) + k] = int((i / (int(I_h / sf)))*I_h*sf + i % (int(I_h / sf))*sf + int(j*I_h) + k);
+				D.col[i*n_pix_per_row + int(j*sf) + k] = int((i / (int(I_h / sf)))*I_h*sf + i % (int(I_h / sf))*sf + int(j*I_h) + k);
 			}
 		}
 	}					
+	
+	/*for (int i = 0; i < nnz; i++) {
+		std::cout << D_row[i] << " ";
+	}
+	std::cout << std::endl;
+	for (int i = 0; i < nnz; i++) {
+		std::cout << D_col[i] << " ";
+	}
+	std::cout << std::endl;
+	for (int i = 0; i < nnz; i++) {
+		std::cout << D_val[i] << " ";
+	}
+	std::cout << std::endl;*/
 	Mat_Close(matfp);
 }

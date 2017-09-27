@@ -12,8 +12,34 @@ void cuda_check(std::string file, int line);
 #define CUDA_CHECK 
 #endif
 
-
-void printMatrix(float* mat, size_t h, size_t w);
+template <typename T>
+void printMatrix(T* mat, size_t h, size_t w) {
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			printf("%8.2f ", (float)mat[j*h + i]);
+		}
+		std::cout << std::endl;
+	}
+	std::cout << std::endl;
+}
+template <typename T>
+struct SparseCOO {
+	int* row, *col;
+	T* val;
+	int n_row, n_col, n_nz;
+	SparseCOO() {
+		row = col = NULL;
+		val = NULL;
+	}
+	~SparseCOO() {
+		if (row!=NULL)
+			delete[] row;
+		if (col != NULL)
+			delete[] col;
+		if (val != NULL)
+			delete[] val;
+	}
+};
 
 struct DataHandler {
 
@@ -25,10 +51,7 @@ struct DataHandler {
 	float sf; 
 	float* z0; // h x w x n
 	size_t z0_n;
-	float* D_val;
-	int* D_row, *D_col;
-	size_t n_D_rows, n_D_cols, nnz;
-
+	SparseCOO<float> D;
 	DataHandler();
 	~DataHandler();
 	matvar_t* readVariableFromFile(mat_t * matfp, const char * varname);
