@@ -31,6 +31,21 @@ struct SparseCOO {
 		row = col = NULL;
 		val = NULL;
 	}
+	SparseCOO(int n_row, int n_col, int n_nz) :n_row(n_row), n_col(n_col), n_nz(n_nz) {
+		row = new int[n_nz];
+		col = new int[n_nz];
+		val = new T[n_nz];
+	}
+	SparseCOO operator +(SparseCOO& second) {
+		SparseCOO result(n_row + second.n_row, n_col + second.n_col, n_nz + second.n_nz);
+		memcpy(result.row, row, n_nz * sizeof(int));
+		memcpy(result.col, col, n_nz * sizeof(int));
+		memcpy(result.val, val, n_nz * sizeof(T));
+		memcpy(result.row + nnz, second.row, second.n_nz * sizeof(int));
+		memcpy(result.col + nnz, second.col, second.n_nz * sizeof(int));
+		memcpy(result.val + nnz, second.val, second.n_nz * sizeof(T));
+		return result;
+	}
 	~SparseCOO() {
 		if (row!=NULL)
 			delete[] row;

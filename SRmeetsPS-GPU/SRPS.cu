@@ -3,6 +3,8 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include "Exceptions.h"
+#include <thrust/fill.h>
+#include <tuple>
 
 struct is_less_than_one {
 	__host__ __device__ bool operator()(float x) {
@@ -111,34 +113,57 @@ float* cuda_based_image_resize(float* data, size_t h, size_t w, size_t new_h, si
 	return NULL;
 }
 
-void make_gradient(uint8_t* mask, int h, int w, thrust::host_vector<int> imask) {
-	uint8_t* omega_top_neighbour = new uint8_t[sizeof(uint8_t)*w*h];
-	uint8_t* omega_left_neighbour = new uint8_t[sizeof(uint8_t)*w*h];
-	uint8_t* omega_right_neighbour = new uint8_t[sizeof(uint8_t)*w*h];
-	uint8_t* omega_bottom_neighbour = new uint8_t[sizeof(uint8_t)*w*h];
+template <typename T>
+void set_sparse_matrix_for_gradient(SparseCOO<T>& D, thrust::host_vector<int>& ic, thrust::host_vector<int>& ir, int k1, int k2) {
+	memcpy(D.row, ic.data, sizeof(int)*ic.size());
+	memcpy(D.row + ic.size(), ic.data, sizeof(int)*ic.size());
+	memcpy(D.col, ir.data, sizeof(int)*ir.size());
+	memcpy(D.col + ir.size(), ic.data, sizeof(int)*ic.size());
+	memset(D.val, k1, sizeof(T)*ic.size());
+	memset(D.val, k2, sizeof(T)*ic.size());
+}
+
+std::tuple<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, int w, int* index_in_masked_matrix) {
 	
-	memset(omega_top_neighbour, 0, sizeof(uint8_t)*w*h);
-	memset(omega_left_neighbour, 0, sizeof(uint8_t)*w*h);
-	memset(omega_right_neighbour, 0, sizeof(uint8_t)*w*h);
-	memset(omega_bottom_neighbour, 0, sizeof(uint8_t)*w*h);
+	thrust::host_vector<int> ic_top, ir_top;
+	thrust::host_vector<int> ic_left, ir_left;
+	thrust::host_vector<int> ic_right, ir_right;
+	thrust::host_vector<int> ic_bottom, ir_bottom;
 	
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < h; i++) {
-			if (i - 1 >= 0 && mask[i - 1 + j * h] != 0) {
-				omega_top_neighbour[i - 1 + j * h] = 1;
-			}
 			if (i + 1 < h && mask[i + 1 + j * h] != 0) {
-				omega_bottom_neighbour[i + 1 + j * h] = 1;
+				ic_bottom.push_back(index_in_masked_matrix[i + j * h]);
+				ir_bottom.push_back(index_in_masked_matrix[i + 1 + j * h]);
 			}
-			if (j - 1 > 0 && mask[i + (j - 1) * h] != 0) {
-				omega_left_neighbour[i + (j - 1) * h] = 1;
+			else if (i - 1 > 0 && mask[i - 1 + j * h] != 0) {
+				ic_top.push_back(index_in_masked_matrix[i + j * h]);
+				ir_top.push_back(index_in_masked_matrix[i - 1 + j * h]);
 			}
 			if (j + 1 < w && mask[i + (j + 1) * h] != 0) {
-				omega_right_neighbour[i + (j + 1) * h] = 1;
+				ic_right.push_back(index_in_masked_matrix[i + j * h]);
+				ir_right.push_back(index_in_masked_matrix[i + (j + 1) * h]);
+			}
+			else if (j - 1 > 0 && mask[i + (j - 1) * h] != 0) {
+				ic_left.push_back(index_in_masked_matrix[i + j * h]);
+				ir_left.push_back(index_in_masked_matrix[i + (j - 1) * h]);
 			}
 		}
 	}
 
+	SparseCOO<float> Dxp(h*w, h*w, ic_right.size() * 2);
+	set_sparse_matrix_for_gradient<float>(Dxp, ic_right, ir_right, 1, -1);
+
+	SparseCOO<float> Dxn(h*w, h*w, ic_left.size() * 2);
+	set_sparse_matrix_for_gradient<float>(Dxn, ic_left, ir_left, -1, 1);
+
+	SparseCOO<float> Dyp(h*w, h*w, ic_bottom.size() * 2);
+	set_sparse_matrix_for_gradient<float>(Dyp, ic_bottom, ir_bottom, 1, -1);
+
+	SparseCOO<float> Dyn(h*w, h*w, ic_top.size() * 2);
+	set_sparse_matrix_for_gradient<float>(Dyn, ic_top, ir_top, -1, 1);
+
+	return std::make_tuple(Dyp + Dyn, Dxp + Dxn);
 }
 
 void SRPS::preprocessing() {
@@ -174,10 +199,13 @@ void SRPS::preprocessing() {
 	// cudaMemcpy(z, d_z, sizeof(float)*datahandler->I_h*datahandler->I_w, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	// printMatrix<float>(z, datahandler->I_h, datahandler->I_w);
 	thrust::host_vector<int> imask, imasks;
-	int* index_matrix = new int[sizeof(int)*datahandler->D.n_col];
+	int* index_in_masked_matrix = new int[datahandler->I_h*datahandler->I_w];
+	memset(index_in_masked_matrix, 0, sizeof(int)*datahandler->I_h*datahandler->I_w);
+	int ctr = 0;
 	for (int i = 0; i < datahandler->D.n_col; i++) {
 		if (datahandler->mask[i] != 0) {
 			imask.push_back(i);
+			index_in_masked_matrix[i] = ctr++;
 		}
 	}
 	for (int i = 0; i < datahandler->D.n_row; i++) {
@@ -198,6 +226,7 @@ void SRPS::preprocessing() {
 			KT_nnz++;
 		}
 	}
+	std::tuple<SparseCOO<float>, SparseCOO<float>> G = make_gradient(datahandler->mask, datahandler->I_h, datahandler->I_w, index_in_masked_matrix);
 	cudaFree(d_inpaint_locations); CUDA_CHECK;
 	cudaFree(d_zs); CUDA_CHECK;
 	cudaFree(d_masks); CUDA_CHECK;
