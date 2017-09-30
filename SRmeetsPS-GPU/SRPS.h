@@ -1,10 +1,11 @@
 #pragma once
+#include <opencv2/photo.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <tuple>
+#include <algorithm>
 #include "Utilities.h"
-#include "cusparse_v2.h"
-#include "thrust/replace.h"
-#include "thrust/execution_policy.h"
-#include "thrust/device_vector.h"
-#include "device_launch_parameters.h"
+#include "devicecalls.cuh"
 
 class SRPS
 {

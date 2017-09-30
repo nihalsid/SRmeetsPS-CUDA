@@ -1,121 +1,10 @@
 #include "SRPS.h"
-#include <opencv2/photo.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
-#include "Exceptions.h"
-#include <thrust/fill.h>
-#include <tuple>
-#include <algorithm>
-#define BIG_GPU
 
-struct is_less_than_one {
-	__host__ __device__ bool operator()(const float x) {
-		return x < 1.f;
-	}
-};
-
-struct is_one
-{
-	__host__ __device__ bool operator()(const float x) {
-		return x == 1;
-	}
-};
 SRPS::SRPS(DataHandler& dh) {
 	this->dh = &dh;
 }
 
 SRPS::~SRPS() {}
-
-float* cuda_based_sparsemat_densevec_mul(int* row_ind, int* col_ind, float* vals, int n_rows, int n_cols, int nnz, float* d_vector) {
-	int* d_row_ind = NULL;
-	int* d_row_csr = NULL;
-	int* d_col_ind = NULL;
-	float* d_vals = NULL;
-	float* d_output = NULL;
-	cudaMalloc(&d_col_ind, nnz * sizeof(int)); CUDA_CHECK;
-	cudaMalloc(&d_row_ind, nnz * sizeof(int)); CUDA_CHECK;
-	cudaMalloc(&d_vals, nnz * sizeof(float)); CUDA_CHECK;
-	cudaMalloc(&d_output, n_rows * sizeof(float)); CUDA_CHECK;
-	cudaMemcpy(d_row_ind, row_ind, nnz * sizeof(int), cudaMemcpyHostToDevice); CUDA_CHECK;
-	cudaMemcpy(d_col_ind, col_ind, nnz * sizeof(int), cudaMemcpyHostToDevice); CUDA_CHECK;
-	cudaMemcpy(d_vals, vals, nnz * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
-	cudaMalloc(&d_row_csr, (n_rows + 1) * sizeof(int)); CUDA_CHECK;
-
-	cusparseStatus_t cusp_stat;
-	cusparseHandle_t cusp_handle = 0;
-	cusparseMatDescr_t cusp_mat_desc = 0;
-
-	cusp_stat = cusparseCreate(&cusp_handle);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("CUSPARSE Library initialization failed");
-	}
-	cusp_stat = cusparseCreateMatDescr(&cusp_mat_desc);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("Matrix descriptor initialization failed");
-	}
-	cusparseSetMatType(cusp_mat_desc, CUSPARSE_MATRIX_TYPE_GENERAL);
-	cusparseSetMatIndexBase(cusp_mat_desc, CUSPARSE_INDEX_BASE_ZERO);
-
-	cusp_stat = cusparseXcoo2csr(cusp_handle, d_row_ind, (int)nnz, (int)n_rows, d_row_csr, CUSPARSE_INDEX_BASE_ZERO);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("Conversion from COO to CSR format failed");
-	}
-	float d_one = 1.f, d_zero = 0.f;
-	cusp_stat = cusparseScsrmv(cusp_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, (int)n_rows, (int)n_cols, (int)nnz, &d_one, cusp_mat_desc, d_vals, d_row_csr, d_col_ind, d_vector, &d_zero, d_output);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("Matrix-vector multiplication failed");
-	}
-	cusp_stat = cusparseDestroyMatDescr(cusp_mat_desc);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("Matrix descriptor destruction failed");
-	}
-	cusp_stat = cusparseDestroy(cusp_handle);
-	if (cusp_stat != CUSPARSE_STATUS_SUCCESS) {
-		throw std::runtime_error("CUSPARSE Library release of resources failed");
-	}
-	cudaFree(d_row_ind); CUDA_CHECK;
-	cudaFree(d_row_csr); CUDA_CHECK;
-	cudaFree(d_col_ind); CUDA_CHECK;
-	cudaFree(d_vals); CUDA_CHECK;
-	return d_output;
-}
-
-__global__ void mean_across_channels(float* data, int h, int w, int nc, float* mean, uint8_t* inpaint_locations) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	int j = blockIdx.y*blockDim.y + threadIdx.y;
-	if (i < h && j < w) {
-		float avg = 0.f;
-		for (int c = 0; c < nc; c++) {
-			if (data[c*(w*h) + j*h + i] != 0)
-				avg += data[c*(w*h) + j*h + i];
-			else {
-				inpaint_locations[j*h + i] = 1;
-				//avg = NAN;
-			}
-		}
-		mean[j*h + i] = avg / nc;
-	}
-}
-
-float* cuda_based_mean_across_channels(float* data, int h, int w, int nc, uint8_t** d_inpaint_locations) {
-	float* d_data = NULL;
-	float* d_output = NULL;
-	dim3 block(128, 8, 1);
-	dim3 grid((unsigned)(h - 1) / block.x + 1, (unsigned)(w - 1) / block.y + 1, 1);
-	cudaMalloc(&d_data, h * w * nc * sizeof(float)); CUDA_CHECK;
-	cudaMalloc(&d_output, h * w * sizeof(float)); CUDA_CHECK;
-	cudaMalloc(d_inpaint_locations, h * w * sizeof(uint8_t)); CUDA_CHECK;
-	cudaMemset(*d_inpaint_locations, 0, h * w * sizeof(uint8_t)); CUDA_CHECK;
-	cudaMemcpy(d_data, data, h * w * nc * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
-	mean_across_channels << <grid, block >> > (d_data, h, w, nc, d_output, *d_inpaint_locations); CUDA_CHECK;
-	cudaFree(d_data); CUDA_CHECK;
-	return d_output;
-}
-
-float* cuda_based_image_resize(float* data, int h, int w, int new_h, int new_w) {
-	// TODO: switch to cv cuda
-	return NULL;
-}
 
 template <typename T>
 void set_sparse_matrix_for_gradient(SparseCOO<T>& D, thrust::host_vector<int>& ic, thrust::host_vector<int>& ir, float k1, float k2) {
@@ -131,8 +20,7 @@ void set_sparse_matrix_for_gradient(SparseCOO<T>& D, thrust::host_vector<int>& i
 	}
 }
 
-std::tuple<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, int w, int* index_in_masked_matrix) {
-
+std::pair<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, int w, int* index_in_masked_matrix) {
 	thrust::host_vector<int> ic_top, ir_top;
 	thrust::host_vector<int> ic_left, ir_left;
 	thrust::host_vector<int> ic_right, ir_right;
@@ -179,7 +67,7 @@ std::tuple<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h,
 	Dxn.freeMemory();
 	Dyn.freeMemory();
 
-	return  std::make_tuple(Dx, Dy);
+	return  std::pair<SparseCOO<float>, SparseCOO<float>>(Dx, Dy);
 }
 
 template<class Iter, class T>
@@ -193,51 +81,21 @@ Iter binary_find(Iter begin, Iter end, T val)
 		return end; // not found
 }
 
-__global__ void initialize_rho(float* rho, int size_c, int nc) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	int c = blockIdx.y*blockDim.y + threadIdx.y;
-	if (i < size_c && c < nc) {
-		rho[c*(size_c)+i] = 0.5f;
-	}
-}
-
-float* cuda_based_rho_init(thrust::host_vector<int>& imask, int nc) {
-	float* d_rho = NULL;
-	cudaMalloc(&d_rho, imask.size() * nc * sizeof(float)); CUDA_CHECK;
-	dim3 block(512, 1, 1);
-	dim3 grid((unsigned)(imask.size() - 1) / block.x + 1, (unsigned)(nc - 1) / block.y + 1, 1);
-	initialize_rho <<< grid, block >>> (d_rho, imask.size(), nc); CUDA_CHECK;
-	cudaDeviceSynchronize();
-	return d_rho;
-}
-
-__global__ void meshgrid_create(float* xx, float* yy, int w, int h){
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	int j = blockIdx.y*blockDim.y + threadIdx.y;
-	if (i < h && j < w) {
-		xx[j*h + i] = j;
-		yy[j*h + i] = i;
-	}
-}
-
-std::pair<float*, float*> cuda_based_meshgrid_create(int w, int h) {
-	float* xx = NULL, *yy = NULL;
-	cudaMalloc(&xx, sizeof(float)*w*h); CUDA_CHECK;
-	cudaMalloc(&yy, sizeof(float)*w*h); CUDA_CHECK;
-	dim3 block(32, 8, 1); 
-	dim3 grid((unsigned)(w - 1) / block.x + 1, (unsigned)(h - 1) / block.y + 1, 1);
-	meshgrid_create <<<grid, block >>> (xx, yy, w, h);
-	cudaDeviceSynchronize();
-	return std::pair<float*, float*>(xx, yy);
-}
-
 void SRPS::preprocessing() {
+	cusparseHandle_t cusp_handle = 0;
+	cublasHandle_t cublas_handle = 0;
+	if (cusparseCreate(&cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
+		throw std::runtime_error("CUSPARSE Library initialization failed");
+	}
+	if (cublasCreate(&cublas_handle) != CUBLAS_STATUS_SUCCESS) {
+		throw std::runtime_error("CUBLAS Library initialization failed");
+	}
 	float* d_mask = NULL;
 	cudaMalloc(&d_mask, sizeof(float) * dh->I_h * dh->I_w);
 	cudaMemcpy(d_mask, dh->mask, sizeof(float) * dh->I_h * dh->I_w, cudaMemcpyHostToDevice);
 	float* masks = new float[dh->D.n_row];
 	std::cout << "Small mask calculation" << std::endl;
-	float* d_masks = cuda_based_sparsemat_densevec_mul(dh->D.row, dh->D.col, dh->D.val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
+	float* d_masks = cuda_based_sparsemat_densevec_mul(cusp_handle, dh->D.row, dh->D.col, dh->D.val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
 	// cudaMemcpy(masks, d_masks, sizeof(float)*dh->n_D_rows, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	// printMatrix(dh->mask, dh->I_h, dh->I_w);
 	//                                                                                                      printMatrix(masks, dh->Z0_h, dh->Z0_w);
@@ -306,7 +164,7 @@ void SRPS::preprocessing() {
 		}
 	}
 
-	SparseCOO<float> KT(imasks.size(), imask.size(), KT_row.size());
+	SparseCOO<float> KT((int)imasks.size(), (int)imask.size(), (int)KT_row.size());
 	memcpy(KT.row, KT_row.data(), KT_row.size() * sizeof(int));
 	memcpy(KT.col, KT_col.data(), KT_col.size() * sizeof(int));
 	for (size_t i = 0; i < KT_row.size(); i++) {
@@ -315,7 +173,7 @@ void SRPS::preprocessing() {
 
 	std::cout << "Masked gradient matrix" << std::endl;
 
-	std::tuple<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix);
+	std::pair<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix);
 
 	std::cout << "Initialization" << std::endl;
 
@@ -383,13 +241,24 @@ void SRPS::preprocessing() {
 	thrust::copy_if(thrust::device, thrust::device_pointer_cast(d_meshgrid.second), thrust::device_pointer_cast(d_meshgrid.second) + dh->I_w*dh->I_h, dt_mask, thrust::device_pointer_cast(d_yy), is_one()); CUDA_CHECK;
 	cudaFree(d_meshgrid.first);
 	cudaFree(d_meshgrid.second);
-	
+	float *d_zx = NULL, *d_zy = NULL;
+	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, G.first.row, G.first.col, G.first.val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
+	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, G.second.row, G.second.col, G.second.val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
+	// Normal initialization
+	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, dh->I_h, dh->I_w, dh->K[0], dh->K[4], dh->K[6], dh->K[7]);
 
 	cudaFree(d_mask); CUDA_CHECK;
+	cudaFree(d_N); CUDA_CHECK;
 	cudaFree(d_z); CUDA_CHECK;
 	cudaFree(d_z0s); CUDA_CHECK;
 	cudaFree(d_masks); CUDA_CHECK;
 	cudaFree(d_I); CUDA_CHECK;
+	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
+		throw std::runtime_error("CUSPARSE Library release of resources failed");
+	}
+	if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
+		throw std::runtime_error("CUBLAS Library release of resources failed");
+	}
 	delete[] inpaint_mask;
 	delete[] masks;
 	delete[] inpaint_locations;
