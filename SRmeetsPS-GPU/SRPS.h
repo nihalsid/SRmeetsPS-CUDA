@@ -9,9 +9,9 @@
 class SRPS
 {
 private:
-	DataHandler* datahandler;
+	DataHandler* dh;
 public:
-	SRPS(DataHandler& datahandler);
+	SRPS(DataHandler& dh);
 	~SRPS();
 	void preprocessing();
 };

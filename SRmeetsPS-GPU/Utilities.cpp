@@ -15,6 +15,7 @@ void cuda_check(std::string file, int line)
 	prev_line = line;
 }
 
+
 matvar_t* DataHandler::readVariableFromFile(mat_t* matfp, const char* varname) {
 	matvar_t* matvar;
 	matvar = Mat_VarReadInfo(matfp, varname);
@@ -27,19 +28,39 @@ matvar_t* DataHandler::readVariableFromFile(mat_t* matfp, const char* varname) {
 	return matvar;
 }
 
-void DataHandler::extractAndCastToFromDoubleToFloat(float* dest,void* source, size_t length) {
+void write_MAT(float* data, size_t length, char* filename) {
+	mat_t    *matfp;
+	matvar_t *matvar;
+	size_t    dims[2] = { length, 1 };
+	matfp = Mat_CreateVer(filename, NULL, MAT_FT_MAT73);
+	if (NULL == matfp) {
+		std::runtime_error("Error creating MAT file\n");
+	}
+	matvar = Mat_VarCreate("x", MAT_C_SINGLE, MAT_T_SINGLE, 2, dims, data, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	else {
+		Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+		Mat_VarFree(matvar);
+	}
+	Mat_Close(matfp);
+}
+
+
+void DataHandler::extractAndCastToFromDoubleToFloat(float* dest,void* source, int length) {
 	double *double_data = new double[length];
 	memcpy(double_data, source, sizeof(double) * length);
-	for (size_t i = 0; i < length; i++) {
+	for (int i = 0; i < length; i++) {
 		dest[i] = (float)double_data[i];
 	}
 	delete[] double_data;
 }
 
-void DataHandler::extractAndCastToFromIntToFloat(float* dest, void* source, size_t length) {
+void DataHandler::extractAndCastToFromIntToFloat(float* dest, void* source, int length) {
 	uint8_t *double_data = new uint8_t[length];
 	memcpy(double_data, source, sizeof(uint8_t) * length);
-	for (size_t i = 0; i < length; i++) {
+	for (int i = 0; i < length; i++) {
 		dest[i] = (float)double_data[i];
 	}
 	delete[] double_data;
@@ -74,7 +95,7 @@ void DataHandler::loadDataFromMatFiles(char* filename) {
 	}
 	
 	matvar = readVariableFromFile(matfp, "I");
-	I_h = matvar->dims[0]; I_w = matvar->dims[1]; I_c = matvar->dims[2]; I_n = matvar->dims[3];
+	I_h = (int) matvar->dims[0]; I_w = (int) matvar->dims[1]; I_c = (int)matvar->dims[2]; I_n = (int)matvar->dims[3];
 	I = new float[I_h*I_w*I_c*I_n];
 	extractAndCastToFromDoubleToFloat(I, matvar->data, I_h*I_w*I_c*I_n);
 	Mat_VarFree(matvar);
@@ -94,11 +115,11 @@ void DataHandler::loadDataFromMatFiles(char* filename) {
 	Mat_VarFree(matvar);
 
 	matvar = readVariableFromFile(matfp, "z0");
-	z0_n = matvar->rank > 2 ? matvar->dims[2] : 1;
-	Z0_h = matvar->dims[0];
-	Z0_w = matvar->dims[1];
+	z0_n = matvar->rank > 2 ? (int) matvar->dims[2] : 1;
+	Z0_h = (int) matvar->dims[0];
+	Z0_w = (int) matvar->dims[1];
 	z0 = new float[size_t((I_h/sf)*(I_w/sf)*z0_n)];
-	extractAndCastToFromDoubleToFloat(z0, matvar->data, (size_t)((I_h / sf)*(I_w / sf)*z0_n));
+	extractAndCastToFromDoubleToFloat(z0, matvar->data, (int)((I_h / sf)*(I_w / sf)*z0_n));
 	Mat_VarFree(matvar);
 
 	D.n_row = (int)(I_h*I_w / (sf*sf));
@@ -118,19 +139,25 @@ void DataHandler::loadDataFromMatFiles(char* filename) {
 				D.col[i*n_pix_per_row + int(j*sf) + k] = int((i / (int(I_h / sf)))*I_h*sf + i % (int(I_h / sf))*sf + int(j*I_h) + k);
 			}
 		}
-	}					
-	
-	/*for (int i = 0; i < nnz; i++) {
-		std::cout << D_row[i] << " ";
-	}
-	std::cout << std::endl;
-	for (int i = 0; i < nnz; i++) {
-		std::cout << D_col[i] << " ";
-	}
-	std::cout << std::endl;
-	for (int i = 0; i < nnz; i++) {
-		std::cout << D_val[i] << " ";
-	}
-	std::cout << std::endl;*/
+	}				
 	Mat_Close(matfp);
+}
+
+std::ostream& operator<<(std::ostream& os, const SparseCOO<float> sp) {
+	os << "ii = [";
+	for (int i = 0; i < sp.n_nz; i++) {
+		os << sp.row[i]+1 << " ";
+	}
+	os << " ];" << std::endl;
+	os << "jj = [";
+	for (int i = 0; i < sp.n_nz; i++) {
+		os << sp.col[i]+1 << " ";
+	}
+	os << " ];" << std::endl;
+	os << "kk = [";
+	for (int i = 0; i < sp.n_nz; i++) {
+		os << sp.val[i] << " ";
+	}
+	os << " ];" << std::endl;
+	return os;
 }
