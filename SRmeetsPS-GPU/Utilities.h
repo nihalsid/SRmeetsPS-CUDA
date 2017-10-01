@@ -27,11 +27,20 @@ do {																				\
 do {																				\
 	float* temp =  new float[size];													\
 	cudaMemcpy(temp, arr, size*sizeof(float), cudaMemcpyDeviceToHost);CUDA_CHECK;	\
-	write_MAT(temp, size, filename);												\
+	write_MAT_floats(temp, size, filename);											\
 	delete[] temp;																	\
 }while(false)
 
-void write_MAT(float* data, size_t length, char* filename);
+#define WRITE_MAT_FROM_DEVICE_INT(arr, size, filename)							\
+do {																			\
+	int* temp =  new int[size];													\
+	cudaMemcpy(temp, arr, size*sizeof(int), cudaMemcpyDeviceToHost);CUDA_CHECK;	\
+	write_MAT_ints(temp, size, filename);										\
+	delete[] temp;																\
+}while(false)
+
+void write_MAT_ints(int* data, size_t length, char* filename);
+void write_MAT_floats(float* data, size_t length, char* filename);
 
 template <typename T>
 void printMatrix(T* mat, size_t h, size_t w) {
@@ -57,7 +66,7 @@ struct SparseCOO {
 		val = new T[n_nz];
 	}
 	SparseCOO<T> operator +(SparseCOO<T>& second) {
-		SparseCOO<T> result(n_row + second.n_row, n_col + second.n_col, n_nz + second.n_nz);
+		SparseCOO<T> result(n_row, n_col, n_nz + second.n_nz);
 		memcpy(result.row, row, n_nz * sizeof(int));
 		memcpy(result.col, col, n_nz * sizeof(int));
 		memcpy(result.val, val, n_nz * sizeof(T));
@@ -65,6 +74,10 @@ struct SparseCOO {
 		memcpy(result.col + n_nz, second.col, second.n_nz * sizeof(int));
 		memcpy(result.val + n_nz, second.val, second.n_nz * sizeof(T));
 		return result;
+	}
+
+	void sortInCOO() {
+
 	}
 
 	void freeMemory() {

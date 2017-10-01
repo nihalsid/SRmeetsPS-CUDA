@@ -28,7 +28,7 @@ matvar_t* DataHandler::readVariableFromFile(mat_t* matfp, const char* varname) {
 	return matvar;
 }
 
-void write_MAT(float* data, size_t length, char* filename) {
+void write_MAT_floats(float* data, size_t length, char* filename) {
 	mat_t    *matfp;
 	matvar_t *matvar;
 	size_t    dims[2] = { length, 1 };
@@ -47,6 +47,24 @@ void write_MAT(float* data, size_t length, char* filename) {
 	Mat_Close(matfp);
 }
 
+void write_MAT_ints(int* data, size_t length, char* filename) {
+	mat_t    *matfp;
+	matvar_t *matvar;
+	size_t    dims[2] = { length, 1 };
+	matfp = Mat_CreateVer(filename, NULL, MAT_FT_MAT73);
+	if (NULL == matfp) {
+		std::runtime_error("Error creating MAT file\n");
+	}
+	matvar = Mat_VarCreate("x", MAT_C_INT32, MAT_T_INT32, 2, dims, data, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	else {
+		Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+		Mat_VarFree(matvar);
+	}
+	Mat_Close(matfp);
+}
 
 void DataHandler::extractAndCastToFromDoubleToFloat(float* dest,void* source, int length) {
 	double *double_data = new double[length];

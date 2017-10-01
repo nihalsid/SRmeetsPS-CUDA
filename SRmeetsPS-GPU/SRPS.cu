@@ -20,7 +20,7 @@ void set_sparse_matrix_for_gradient(SparseCOO<T>& D, thrust::host_vector<int>& i
 	}
 }
 
-std::pair<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, int w, int* index_in_masked_matrix) {
+std::pair<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, int w, int* index_in_masked_matrix, int mask_size) {
 	thrust::host_vector<int> ic_top, ir_top;
 	thrust::host_vector<int> ic_left, ir_left;
 	thrust::host_vector<int> ic_right, ir_right;
@@ -32,7 +32,7 @@ std::pair<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, 
 				ic_bottom.push_back(index_in_masked_matrix[i + j * h]);
 				ir_bottom.push_back(index_in_masked_matrix[i + 1 + j * h]);
 			}
-			else if (i - 1 > 0 && mask[i + j * h] != 0 && mask[i - 1 + j * h] != 0) {
+			else if (i - 1 >= 0 && mask[i + j * h] != 0 && mask[i - 1 + j * h] != 0) {
 				ic_top.push_back(index_in_masked_matrix[i + j * h]);
 				ir_top.push_back(index_in_masked_matrix[i - 1 + j * h]);
 			}
@@ -40,23 +40,23 @@ std::pair<SparseCOO<float>, SparseCOO<float>> make_gradient(float* mask, int h, 
 				ic_right.push_back(index_in_masked_matrix[i + j * h]);
 				ir_right.push_back(index_in_masked_matrix[i + (j + 1) * h]);
 			}
-			else if (j - 1 > 0 && mask[i + j * h] != 0 && mask[i + (j - 1) * h] != 0) {
+			else if (j - 1 >= 0 && mask[i + j * h] != 0 && mask[i + (j - 1) * h] != 0) {
 				ic_left.push_back(index_in_masked_matrix[i + j * h]);
 				ir_left.push_back(index_in_masked_matrix[i + (j - 1) * h]);
 			}
 		}
 	}
 
-	SparseCOO<float> Dxp(h*w, h*w, (int)ic_right.size() * 2);
+	SparseCOO<float> Dxp(mask_size, mask_size, (int)ic_right.size() * 2);
 	set_sparse_matrix_for_gradient<float>(Dxp, ic_right, ir_right, 1, -1);
 
-	SparseCOO<float> Dxn(h*w, h*w, (int)ic_left.size() * 2);
+	SparseCOO<float> Dxn(mask_size, mask_size, (int)ic_left.size() * 2);
 	set_sparse_matrix_for_gradient<float>(Dxn, ic_left, ir_left, -1, 1);
 
-	SparseCOO<float> Dyp(h*w, h*w, (int)ic_bottom.size() * 2);
+	SparseCOO<float> Dyp(mask_size, mask_size, (int)ic_bottom.size() * 2);
 	set_sparse_matrix_for_gradient<float>(Dyp, ic_bottom, ir_bottom, 1, -1);
 
-	SparseCOO<float> Dyn(h*w, h*w, (int)ic_top.size() * 2);
+	SparseCOO<float> Dyn(mask_size, mask_size, (int)ic_top.size() * 2);
 	set_sparse_matrix_for_gradient<float>(Dyn, ic_top, ir_top, -1, 1);
 
 	SparseCOO<float> Dx = Dxp + Dxn;
@@ -96,11 +96,11 @@ void SRPS::preprocessing() {
 	float* masks = new float[dh->D.n_row];
 	std::cout << "Small mask calculation" << std::endl;
 	float* d_masks = cuda_based_sparsemat_densevec_mul(cusp_handle, dh->D.row, dh->D.col, dh->D.val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
+	WRITE_MAT_FROM_DEVICE(d_masks, dh->D.n_row, "masks.mat");
 	// cudaMemcpy(masks, d_masks, sizeof(float)*dh->n_D_rows, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	// printMatrix(dh->mask, dh->I_h, dh->I_w);
 	//                                                                                                      printMatrix(masks, dh->Z0_h, dh->Z0_w);
-	thrust::device_ptr<float> dt_masks = thrust::device_pointer_cast(d_masks);
-	thrust::replace_if(dt_masks, dt_masks + dh->D.n_row, is_less_than_one(), 0.f);
+	thrust::replace_if(THRUST_CAST(d_masks), THRUST_CAST(d_masks) + dh->D.n_row, is_less_than_one(), 0.f);
 	cudaMemcpy(masks, d_masks, sizeof(float)*dh->D.n_row, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	//printMatrix<float>(masks, dh->Z0_h, dh->Z0_w);
 	// average z0 across channels to get zs
@@ -173,8 +173,7 @@ void SRPS::preprocessing() {
 
 	std::cout << "Masked gradient matrix" << std::endl;
 
-	std::pair<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix);
-
+	std::pair<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix, imask.size());
 	std::cout << "Initialization" << std::endl;
 
 	float* d_s = NULL;
@@ -208,28 +207,19 @@ void SRPS::preprocessing() {
 		for (int i = 0; i < dh->I_c; i++)
 			cudaMemcpy(d_mask_extended + dh->I_w * dh->I_h * i, d_mask, dh->I_w * dh->I_h * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
 		cudaMemcpy(d_I_complete, dh->I + n * dh->I_w * dh->I_h * dh->I_c, dh->I_w * dh->I_h * dh->I_c * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
-		thrust::device_ptr<float> dt_I = thrust::device_pointer_cast(d_I);
-		thrust::device_ptr<float> dt_I_complete = thrust::device_pointer_cast(d_I_complete);
-		thrust::device_ptr<float> dt_mask_extended = thrust::device_pointer_cast(d_mask_extended);
-		thrust::copy_if(thrust::device, dt_I_complete, dt_I_complete + dh->I_c*dh->I_w*dh->I_h, dt_mask_extended, dt_I + imask.size() * dh->I_c * n, is_one()); CUDA_CHECK;
+		thrust::copy_if(thrust::device, THRUST_CAST(d_I_complete), THRUST_CAST(d_I_complete) + dh->I_c*dh->I_w*dh->I_h, THRUST_CAST(d_mask_extended), THRUST_CAST(d_I) + imask.size() * dh->I_c * n, is_one()); CUDA_CHECK;
 	}
 #endif
 	cudaFree(d_mask_extended); CUDA_CHECK;
 	cudaFree(d_I_complete); CUDA_CHECK;
 	float *d_z0s = NULL;
-	cudaMalloc(&d_z0s, sizeof(float)*imasks.size()); CUDA_CHECK;
-	thrust::device_ptr<float> dt_zs = thrust::device_pointer_cast(d_zs);
-	thrust::device_ptr<float> dt_z0s = thrust::device_pointer_cast(d_z0s);
-	thrust::copy_if(thrust::device, dt_zs, dt_zs + dh->Z0_h*dh->Z0_w, dt_masks, dt_z0s, is_one()); CUDA_CHECK;
-	WRITE_MAT_FROM_DEVICE(d_z0s, imasks.size(), "z0s.mat");
+	cudaMalloc(&d_z0s, sizeof(float)*imasks.size()); CUDA_CHECK;;
+	thrust::copy_if(thrust::device, THRUST_CAST(d_zs), THRUST_CAST(d_zs) + dh->Z0_h*dh->Z0_w, THRUST_CAST(d_masks), THRUST_CAST(d_z0s), is_one()); CUDA_CHECK;
 	float* d_z = NULL, *d_z_full = NULL;
 	cudaMalloc(&d_z, sizeof(float)*imask.size()); CUDA_CHECK;
 	cudaMalloc(&d_z_full, sizeof(float)*dh->I_h*dh->I_w); CUDA_CHECK;
 	cudaMemcpy(d_z_full, z_full, sizeof(float)*dh->I_h*dh->I_w, cudaMemcpyHostToDevice); CUDA_CHECK;
-	thrust::device_ptr<float> dt_mask = thrust::device_pointer_cast(d_mask);
-	thrust::device_ptr<float> dt_z_full = thrust::device_pointer_cast(d_z_full);
-	thrust::device_ptr<float> dt_z = thrust::device_pointer_cast(d_z);
-	thrust::copy_if(thrust::device, dt_z_full, dt_z_full + dh->I_w*dh->I_h, dt_mask, dt_z, is_one()); CUDA_CHECK;
+	thrust::copy_if(thrust::device, THRUST_CAST(d_z_full), THRUST_CAST(d_z_full) + dh->I_w*dh->I_h, THRUST_CAST(d_mask), THRUST_CAST(d_z), is_one()); CUDA_CHECK;
 	WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
 	cudaFree(d_z_full);
 	cudaFree(d_zs); CUDA_CHECK;
@@ -237,16 +227,19 @@ void SRPS::preprocessing() {
 	cudaMalloc(&d_xx, sizeof(float)*imask.size()); CUDA_CHECK;
 	cudaMalloc(&d_yy, sizeof(float)*imask.size()); CUDA_CHECK;
 	std::pair<float*, float*> d_meshgrid = cuda_based_meshgrid_create(dh->I_w, dh->I_h);
-	thrust::copy_if(thrust::device, thrust::device_pointer_cast(d_meshgrid.first), thrust::device_pointer_cast(d_meshgrid.first) + dh->I_w*dh->I_h, dt_mask, thrust::device_pointer_cast(d_xx), is_one()); CUDA_CHECK;
-	thrust::copy_if(thrust::device, thrust::device_pointer_cast(d_meshgrid.second), thrust::device_pointer_cast(d_meshgrid.second) + dh->I_w*dh->I_h, dt_mask, thrust::device_pointer_cast(d_yy), is_one()); CUDA_CHECK;
+	thrust::copy_if(thrust::device, THRUST_CAST(d_meshgrid.first), THRUST_CAST(d_meshgrid.first) + dh->I_w*dh->I_h, THRUST_CAST(d_mask), THRUST_CAST(d_xx), is_one()); CUDA_CHECK;
+	thrust::copy_if(thrust::device, THRUST_CAST(d_meshgrid.second), THRUST_CAST(d_meshgrid.second) + dh->I_w*dh->I_h, THRUST_CAST(d_mask), THRUST_CAST(d_yy), is_one()); CUDA_CHECK;
 	cudaFree(d_meshgrid.first);
 	cudaFree(d_meshgrid.second);
 	float *d_zx = NULL, *d_zy = NULL;
 	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, G.first.row, G.first.col, G.first.val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
 	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, G.second.row, G.second.col, G.second.val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
+	WRITE_MAT_FROM_DEVICE(d_zy, imask.size(), "zy.mat");
+	WRITE_MAT_FROM_DEVICE(d_zx, imask.size(), "zx.mat");
+	//WRITE_MAT_FROM_DEVICE(d_zx, imask.size(), "zx.mat");
 	// Normal initialization
-	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, dh->I_h, dh->I_w, dh->K[0], dh->K[4], dh->K[6], dh->K[7]);
-
+	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, imask.size(), dh->K[0], dh->K[4], dh->K[6], dh->K[7]);
+	WRITE_MAT_FROM_DEVICE(d_N, imask.size()*4, "N.mat");
 	cudaFree(d_mask); CUDA_CHECK;
 	cudaFree(d_N); CUDA_CHECK;
 	cudaFree(d_z); CUDA_CHECK;

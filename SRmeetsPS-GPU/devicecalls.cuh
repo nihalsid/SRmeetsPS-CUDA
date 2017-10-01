@@ -7,6 +7,8 @@
 #include "device_launch_parameters.h"
 #include "Utilities.h"
 
+#define THRUST_CAST(ptr) thrust::device_pointer_cast(ptr)
+
 struct is_less_than_one {
 	__host__ __device__ bool operator()(const float x) {
 		return x < 1.f;
@@ -28,4 +30,4 @@ __global__ void initialize_rho(float* rho, int size_c, int nc);
 float* cuda_based_rho_init(thrust::host_vector<int>& imask, int nc);
 __global__ void meshgrid_create(float* xx, float* yy, int w, int h);
 std::pair<float*, float*> cuda_based_meshgrid_create(int w, int h);
-float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d_zx, float *d_zy, float *d_xx, float *d_yy, int h, int w, float K00, float K11, float K02, float K12);
+float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d_zx, float *d_zy, float *d_xx, float *d_yy, int npix, float K00, float K11, float K02, float K12);
