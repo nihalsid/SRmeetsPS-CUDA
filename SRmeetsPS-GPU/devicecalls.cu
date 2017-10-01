@@ -196,10 +196,10 @@ float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d
 	return d_N;
 }
 
-void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, cusparseHandle_t& cusparseHandle, int* d_A_row, int* d_A_col, float* d_A_val, float* d_x, float* d_b, int N, int nnz) {
+void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, cusparseHandle_t& cusparseHandle, int* d_A_row, int* d_A_col, float* d_A_val, int N, int nnz, float* d_x, float* d_b) {
 	// Will need to add COO sort
-	const float tol = 1e-12f;
-	const int max_iter = 1000;
+	const float tol = 1e-9f;
+	const int max_iter = 100;
 	float r1, alpha, beta;
 	float rsum, diff, err = 0.0;
 	float dot, numerator, denominator, nalpha;
@@ -286,4 +286,71 @@ void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, 
 	cudaFree(d_zm1); CUDA_CHECK;
 	cudaFree(d_zm2); CUDA_CHECK;
 	cudaFree(d_rm2); CUDA_CHECK;
+}
+
+__global__ void A_for_lightning_estimation(float* rho, float* N, int npix, float* A) {
+	int i = blockIdx.x*blockDim.x + threadIdx.x; // pixel index
+	int c = blockIdx.y*blockDim.y + threadIdx.y; // channel index
+	int h = blockIdx.z*blockDim.z + threadIdx.z; // harmonic index
+	if (i < npix) {
+		A[c*npix*4+h*npix+i] = rho[c*npix + i] * N[h*npix + i];
+	}
+}
+
+float* cuda_based_A_for_lightning(float* d_rho, float* d_N, int npix, int nchannels) {
+	float* d_A;
+	cudaMalloc(&d_A, sizeof(float)*npix * 4 * nchannels);
+	dim3 block(256, 1, 1);
+	dim3 grid((unsigned)(npix - 1) / block.x + 1, (unsigned)(nchannels - 1) / block.y + 1, 4);
+	A_for_lightning_estimation<<<grid, block>>>(d_rho, d_N, npix, d_A);
+	cudaDeviceSynchronize();
+	return d_A;
+}
+
+void cuda_based_lightning_estimation(cublasHandle_t cublas_handle, cusparseHandle_t cusp_handle, float* d_s, float* d_rho, float* d_N, float* d_I, int npix, int nimages, int nchannels) {
+	cusparseStatus_t status;
+	float* d_A = cuda_based_A_for_lightning(d_rho, d_N, npix, nchannels);
+	WRITE_MAT_FROM_DEVICE(d_A, npix*4*nchannels, "A.mat");
+	float* d_b = d_I;
+	for (int i = 0; i < nimages; i++) {
+		for (int j = 0; j < nchannels; j++){
+			float* d_A_ij = d_A + j*npix * 4;
+			float* d_b_ij = d_b + i*npix*nchannels + j*npix;
+			float* d_x_ij = d_s + i * 4 * nchannels + j * 4;
+			int *dANnzPerRow;
+			float *dCsrValA, *dCsrValATA, *d_ATb_ij;
+			int *dCsrRowPtrA, *dCsrColIndA, *dCsrRowPtrATA, *dCsrColIndATA;
+			int totalANnz,nnzATA;
+			cusparseMatDescr_t Adescr = 0;
+			cudaMalloc((void **)&dANnzPerRow, sizeof(int) * npix); CUDA_CHECK;
+			status = cusparseCreateMatDescr(&Adescr); CUSPARSE_CHECK(status);
+			cusparseSetMatType(Adescr, CUSPARSE_MATRIX_TYPE_GENERAL);
+			cusparseSetMatIndexBase(Adescr, CUSPARSE_INDEX_BASE_ZERO);
+			status = cusparseSnnz(cusp_handle, CUSPARSE_DIRECTION_ROW, npix, 4, Adescr, d_A_ij, npix, dANnzPerRow, &totalANnz); CUSPARSE_CHECK(status);
+			cudaMalloc((void **)&dCsrValA, sizeof(float) * totalANnz); CUDA_CHECK;
+			cudaMalloc((void **)&dCsrRowPtrA, sizeof(int) * (npix + 1)); CUDA_CHECK;
+			cudaMalloc((void **)&dCsrColIndA, sizeof(int) * totalANnz); CUDA_CHECK;
+			status = cusparseSdense2csr(cusp_handle, npix, 4, Adescr, d_A_ij, npix, dANnzPerRow, dCsrValA, dCsrRowPtrA, dCsrColIndA); CUSPARSE_CHECK(status);
+			cudaFree(dANnzPerRow); CUDA_CHECK;
+			cudaMalloc((void**)&dCsrRowPtrATA, sizeof(int)*(4 + 1)); CUDA_CHECK;
+			status = cusparseXcsrgemmNnz(cusp_handle, CUSPARSE_OPERATION_TRANSPOSE, CUSPARSE_OPERATION_NON_TRANSPOSE, 4, 4, npix, Adescr, totalANnz, dCsrRowPtrA, dCsrColIndA, Adescr, totalANnz, dCsrRowPtrA, dCsrColIndA, Adescr, dCsrRowPtrATA, &nnzATA); CUSPARSE_CHECK(status);
+			cudaMalloc((void**)&dCsrColIndATA, sizeof(int)*nnzATA); CUDA_CHECK;
+			cudaMalloc((void**)&dCsrValATA, sizeof(float)*nnzATA); CUDA_CHECK;
+			cudaMalloc((void**)&d_ATb_ij, sizeof(float)*4); CUDA_CHECK;
+			status = cusparseScsrgemm(cusp_handle, CUSPARSE_OPERATION_TRANSPOSE, CUSPARSE_OPERATION_NON_TRANSPOSE, 4, 4, npix, Adescr, totalANnz, dCsrValA, dCsrRowPtrA, dCsrColIndA, Adescr, totalANnz, dCsrValA, dCsrRowPtrA, dCsrColIndA, Adescr, dCsrValATA, dCsrRowPtrATA, dCsrColIndATA); CUSPARSE_CHECK(status);
+			float d_one = 1.f, d_zero = 0.f;
+			status = cusparseScsrmv(cusp_handle, CUSPARSE_OPERATION_TRANSPOSE, npix, 4, totalANnz, &d_one, Adescr, dCsrValA, dCsrRowPtrA, dCsrColIndA, d_b_ij, &d_zero, d_ATb_ij); CUSPARSE_CHECK(status);
+			cudaFree(dCsrRowPtrA); CUDA_CHECK;
+			cudaFree(dCsrColIndA); CUDA_CHECK;
+			cudaFree(dCsrValA); CUDA_CHECK;
+			status = cusparseDestroyMatDescr(Adescr); CUSPARSE_CHECK(status);
+			cuda_based_preconditioned_conjugate_gradient(cublas_handle, cusp_handle, dCsrRowPtrATA, dCsrColIndATA, dCsrValATA, 4, nnzATA, d_x_ij, d_ATb_ij);
+			cudaFree(dCsrValATA); CUDA_CHECK;
+			cudaFree(d_ATb_ij); CUDA_CHECK;
+			cudaFree(dCsrRowPtrATA); CUDA_CHECK;
+			cudaFree(dCsrColIndATA); CUDA_CHECK;
+		}
+	}
+	WRITE_MAT_FROM_DEVICE(d_s, nimages*4*nchannels, "s.mat");
+	cudaFree(d_A);
 }
