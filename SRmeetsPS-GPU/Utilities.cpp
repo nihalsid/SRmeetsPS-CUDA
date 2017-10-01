@@ -15,6 +15,18 @@ void cuda_check(std::string file, int line)
 	prev_line = line;
 }
 
+void cusparse_check(cusparseStatus_t status) {
+	if (status != CUSPARSE_STATUS_SUCCESS) {
+		throw std::runtime_error("CUSPARSE ERROR " + std::to_string(status));
+	}
+}
+
+void cublas_check(cublasStatus_t status) {
+	if (status != CUBLAS_STATUS_SUCCESS) {
+		throw std::runtime_error("CUBLAS ERROR " + std::to_string(status));
+	}
+}
+
 
 matvar_t* DataHandler::readVariableFromFile(mat_t* matfp, const char* varname) {
 	matvar_t* matvar;

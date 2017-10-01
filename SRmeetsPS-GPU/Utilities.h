@@ -4,13 +4,30 @@
 #include <cuda_runtime.h>
 #include <string>
 #include "matio.h"
+#include "cublas_v2.h"
+#include "cusparse_v2.h"
 
 #ifdef _DEBUG
 #define CUDA_CHECK cuda_check(__FILE__,__LINE__)
-void cuda_check(std::string file, int line);
 #else
 #define CUDA_CHECK 
 #endif
+
+#ifdef _DEBUG
+#define CUSPARSE_CHECK(st) cusparse_check(st)
+#else
+#define CUSPBLAS_CHECK(e)
+#endif
+
+#ifdef _DEBUG
+#define CUBLAS_CHECK(st) cublas_check(st)
+#else
+#define CUSPBLAS_CHECK(e)
+#endif
+
+void cuda_check(std::string file, int line);
+void cusparse_check(cusparseStatus_t status);
+void cublas_check(cublasStatus_t status);
 
 #define PRINT_FROM_DEVICE(arr, size)												\
 do {																				\

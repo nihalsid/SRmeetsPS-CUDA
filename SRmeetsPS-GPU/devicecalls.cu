@@ -2,20 +2,21 @@
 #include "Exceptions.h"
 
 float* sort_COO(cusparseHandle_t cusp_handle, int n_rows, int n_cols, int nnz, int* d_row_ind, int* d_col_ind, float* d_vals_unsorted) {
+	cusparseStatus_t status;
 	float* d_vals = NULL;
 	size_t pBufferSizeInBytes = 0;
 	void *pBuffer = NULL;
 	int *P = NULL;
 	cudaMalloc(&d_vals, nnz * sizeof(float)); CUDA_CHECK;
-	cusparseXcoosort_bufferSizeExt(cusp_handle, n_rows, n_cols, nnz, d_row_ind, d_col_ind, &pBufferSizeInBytes);
-	cudaMalloc(&pBuffer, sizeof(char)* pBufferSizeInBytes);
-	cudaMalloc((void**)&P, sizeof(int)*nnz);
-	cusparseCreateIdentityPermutation(cusp_handle, nnz, P);
-	cusparseXcoosortByRow(cusp_handle, n_rows, n_cols, nnz, d_row_ind, d_col_ind, P, pBuffer);
-	cusparseSgthr(cusp_handle, nnz, d_vals_unsorted, d_vals, P, CUSPARSE_INDEX_BASE_ZERO);
-	cudaFree(d_vals_unsorted);
-	cudaFree(P);
-	cudaFree(pBuffer);
+	status = cusparseXcoosort_bufferSizeExt(cusp_handle, n_rows, n_cols, nnz, d_row_ind, d_col_ind, &pBufferSizeInBytes); CUSPARSE_CHECK(status);
+	cudaMalloc(&pBuffer, sizeof(char)* pBufferSizeInBytes); CUDA_CHECK;
+	cudaMalloc((void**)&P, sizeof(int)*nnz); CUDA_CHECK;
+	status = cusparseCreateIdentityPermutation(cusp_handle, nnz, P); CUSPARSE_CHECK(status);
+	status = cusparseXcoosortByRow(cusp_handle, n_rows, n_cols, nnz, d_row_ind, d_col_ind, P, pBuffer); CUSPARSE_CHECK(status);
+	status = cusparseSgthr(cusp_handle, nnz, d_vals_unsorted, d_vals, P, CUSPARSE_INDEX_BASE_ZERO); CUSPARSE_CHECK(status);
+	cudaFree(d_vals_unsorted); CUDA_CHECK;
+	cudaFree(P); CUDA_CHECK;
+	cudaFree(pBuffer); CUDA_CHECK;
 	return d_vals;
 }
 
@@ -204,65 +205,58 @@ void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, 
 	float dot, numerator, denominator, nalpha;
 	const float floatone = 1.0;
 	const float floatzero = 0.0;
-	cublasStatus_t cublasStatus;
 	cusparseStatus_t cusparseStatus;
 	cusparseMatDescr_t descr = 0;
-	cusparseStatus = cusparseCreateMatDescr(&descr);
+	cusparseStatus = cusparseCreateMatDescr(&descr); CUSPARSE_CHECK(cusparseStatus);
 	cusparseSetMatType(descr, CUSPARSE_MATRIX_TYPE_GENERAL);
 	cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ZERO);
 	float *d_zm1, *d_zm2, *d_rm2, *d_y, *d_p, *d_omega;
 	float *d_valsILU0;
 	int nzILU0 = 2 * N - 1; 
-	cudaMalloc((void **)&d_y, N * sizeof(float));
-	cudaMalloc((void **)&d_p, N * sizeof(float));
-	cudaMalloc((void **)&d_omega, N * sizeof(float));
-	cudaMalloc((void **)&d_valsILU0, nnz * sizeof(float));
-	cudaMalloc((void **)&d_zm1, (N) * sizeof(float));
-	cudaMalloc((void **)&d_zm2, (N) * sizeof(float));
-	cudaMalloc((void **)&d_rm2, (N) * sizeof(float));
+	cudaMalloc((void **)&d_y, N * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_p, N * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_omega, N * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_valsILU0, nnz * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_zm1, (N) * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_zm2, (N) * sizeof(float)); CUDA_CHECK;
+	cudaMalloc((void **)&d_rm2, (N) * sizeof(float)); CUDA_CHECK;
 	/* create the analysis info object for the A matrix */
 	cusparseSolveAnalysisInfo_t infoA = 0;
-	cusparseStatus = cusparseCreateSolveAnalysisInfo(&infoA);
+	cusparseStatus = cusparseCreateSolveAnalysisInfo(&infoA); CUSPARSE_CHECK(cusparseStatus);
 	/* Perform the analysis for the Non-Transpose case */
-	cusparseStatus = cusparseScsrsv_analysis(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-		N, nnz, descr, d_A_val, d_A_row, d_A_col, infoA);
+	cusparseStatus = cusparseScsrsv_analysis(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, nnz, descr, d_A_val, d_A_row, d_A_col, infoA); CUSPARSE_CHECK(cusparseStatus);
 	/* Copy A data to ILU0 vals as input*/
-	cudaMemcpy(d_valsILU0, d_A_val, nnz * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(d_valsILU0, d_A_val, nnz * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
 	/* generate the Incomplete LU factor H for the matrix A using cudsparseScsrilu0 */
-	cusparseStatus = cusparseScsrilu0(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, descr, d_valsILU0, d_A_row, d_A_col, infoA);
+	cusparseStatus = cusparseScsrilu0(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, descr, d_valsILU0, d_A_row, d_A_col, infoA); CUSPARSE_CHECK(cusparseStatus);
 	/* Create info objects for the ILU0 preconditioner */
 	cusparseSolveAnalysisInfo_t info_u;
 	cusparseCreateSolveAnalysisInfo(&info_u);
 	cusparseMatDescr_t descrL = 0;
-	cusparseStatus = cusparseCreateMatDescr(&descrL);
+	cusparseStatus = cusparseCreateMatDescr(&descrL); CUSPARSE_CHECK(cusparseStatus);
 	cusparseSetMatType(descrL, CUSPARSE_MATRIX_TYPE_GENERAL);
 	cusparseSetMatIndexBase(descrL, CUSPARSE_INDEX_BASE_ZERO);
 	cusparseSetMatFillMode(descrL, CUSPARSE_FILL_MODE_LOWER);
 	cusparseSetMatDiagType(descrL, CUSPARSE_DIAG_TYPE_UNIT);
 	cusparseMatDescr_t descrU = 0;
-	cusparseStatus = cusparseCreateMatDescr(&descrU);
+	cusparseStatus = cusparseCreateMatDescr(&descrU); CUSPARSE_CHECK(cusparseStatus);
 	cusparseSetMatType(descrU, CUSPARSE_MATRIX_TYPE_GENERAL);
 	cusparseSetMatIndexBase(descrU, CUSPARSE_INDEX_BASE_ZERO);
 	cusparseSetMatFillMode(descrU, CUSPARSE_FILL_MODE_UPPER);
 	cusparseSetMatDiagType(descrU, CUSPARSE_DIAG_TYPE_NON_UNIT);
-	cusparseStatus = cusparseScsrsv_analysis(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, nnz, descrU, d_A_val, d_A_row, d_A_col, info_u);
+	cusparseStatus = cusparseScsrsv_analysis(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, nnz, descrU, d_A_val, d_A_row, d_A_col, info_u); CUSPARSE_CHECK(cusparseStatus);
 	int k = 0;
 	cublasSdot(cublasHandle, N, d_b, 1, d_b, 1, &r1);
 	while (r1 > tol*tol && k <= max_iter) {
 		// Forward Solve, we can re-use infoA since the sparsity pattern of A matches that of L
-		cusparseStatus = cusparseScsrsv_solve(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, &floatone, descrL,
-			d_valsILU0, d_A_row, d_A_col, infoA, d_b, d_y);
+		cusparseStatus = cusparseScsrsv_solve(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, &floatone, descrL, d_valsILU0, d_A_row, d_A_col, infoA, d_b, d_y); CUSPARSE_CHECK(cusparseStatus);
 		// Back Substitution
-		cusparseStatus = cusparseScsrsv_solve(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, &floatone, descrU,
-			d_valsILU0, d_A_row, d_A_col, info_u, d_y, d_zm1);
+		cusparseStatus = cusparseScsrsv_solve(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, N, &floatone, descrU, d_valsILU0, d_A_row, d_A_col, info_u, d_y, d_zm1); CUSPARSE_CHECK(cusparseStatus);
 		k++;
-
-		if (k == 1)
-		{
+		if (k == 1) {
 			cublasScopy(cublasHandle, N, d_zm1, 1, d_p, 1);
 		}
-		else
-		{
+		else {
 			cublasSdot(cublasHandle, N, d_b, 1, d_zm1, 1, &numerator);
 			cublasSdot(cublasHandle, N, d_rm2, 1, d_zm2, 1, &denominator);
 			beta = numerator / denominator;
@@ -285,11 +279,11 @@ void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, 
 	cusparseDestroySolveAnalysisInfo(info_u);
 
 	/* Free device memory */
-	cudaFree(d_y);
-	cudaFree(d_p);
-	cudaFree(d_omega);
-	cudaFree(d_valsILU0);
-	cudaFree(d_zm1);
-	cudaFree(d_zm2);
-	cudaFree(d_rm2);
+	cudaFree(d_y); CUDA_CHECK;
+	cudaFree(d_p); CUDA_CHECK;
+	cudaFree(d_omega); CUDA_CHECK;
+	cudaFree(d_valsILU0); CUDA_CHECK;
+	cudaFree(d_zm1); CUDA_CHECK;
+	cudaFree(d_zm2); CUDA_CHECK;
+	cudaFree(d_rm2); CUDA_CHECK;
 }
