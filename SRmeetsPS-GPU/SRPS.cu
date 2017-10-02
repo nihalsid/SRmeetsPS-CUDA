@@ -238,7 +238,8 @@ void SRPS::preprocessing() {
 	
 	std::cout << "Lighting estimation" << std::endl;
 	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
-	
+	std::cout << "Albedo estimation" << std::endl;
+	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
 	}
