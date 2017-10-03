@@ -56,6 +56,20 @@ do {																			\
 	delete[] temp;																\
 }while(false)
 
+#define PRINT_SPARSE_CSR(cusp_handle, d_row_ptr, d_col_ind, d_val, nnz, nrows, ncols)				\
+do {																								\
+	int* d_row_index = NULL;																		\
+	cudaMalloc(&d_row_index, sizeof(int)*nnz);														\
+	cusparseXcsr2coo(cusp_handle, d_row_ptr, nnz, nrows, d_row_index, CUSPARSE_INDEX_BASE_ZERO);	\
+	SparseCOO<float> spm(nrows, ncols, nnz);														\
+	cudaMemcpy(spm.row, d_row_index, nnz * sizeof(float), cudaMemcpyDeviceToHost);					\
+	cudaMemcpy(spm.col, d_col_ind, nnz * sizeof(float), cudaMemcpyDeviceToHost);					\
+	cudaMemcpy(spm.val, d_val, nnz * sizeof(float), cudaMemcpyDeviceToHost);						\
+	std::cout << spm << std::endl;																	\
+	cudaFree(d_row_index);																			\
+	spm.freeMemory();																				\
+}while(false)
+
 void write_MAT_ints(int* data, size_t length, char* filename);
 void write_MAT_floats(float* data, size_t length, char* filename);
 

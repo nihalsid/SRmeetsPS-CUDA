@@ -235,11 +235,13 @@ void SRPS::preprocessing() {
 	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, G.second.row, G.second.col, G.second.val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
 	// Normal initialization
 	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, imask.size(), dh->K[0], dh->K[4], dh->K[6], dh->K[7]);
-	
+	WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	std::cout << "Lighting estimation" << std::endl;
 	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
+	WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
 	std::cout << "Albedo estimation" << std::endl;
 	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
+	WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
 	}

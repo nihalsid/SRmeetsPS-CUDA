@@ -189,5 +189,6 @@ std::ostream& operator<<(std::ostream& os, const SparseCOO<float> sp) {
 		os << sp.val[i] << " ";
 	}
 	os << " ];" << std::endl;
+	os << "rows = " << sp.n_row << ", cols = " << sp.n_col << std::endl;
 	return os;
 }
