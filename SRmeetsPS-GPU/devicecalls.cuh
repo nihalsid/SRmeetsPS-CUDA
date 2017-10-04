@@ -28,8 +28,8 @@ float* cuda_based_mean_across_channels(float* data, int h, int w, int nc, uint8_
 float* cuda_based_image_resize(float* data, int h, int w, int new_h, int new_w);
 __global__ void initialize_rho(float* rho, int size_c, int nc);
 float* cuda_based_rho_init(thrust::host_vector<int>& imask, int nc);
-__global__ void meshgrid_create(float* xx, float* yy, int w, int h);
-std::pair<float*, float*> cuda_based_meshgrid_create(int w, int h);
-float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d_zx, float *d_zy, float *d_xx, float *d_yy, int npix, float K00, float K11, float K02, float K12);
+std::pair<float*, float*> cuda_based_meshgrid_create(int w, int h, float K02, float K12);
+float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d_zx, float *d_zy, float *d_xx, float *d_yy, int npix, float K00, float K11, float** d_dz);
 void cuda_based_lightning_estimation(cublasHandle_t cublas_handle, cusparseHandle_t cusp_handle, float* d_s, float* d_rho, float* d_N, float* d_I, int npix, int nimages, int nchannels);
 void cuda_based_albedo_estimation(cublasHandle_t cublas_handle, cusparseHandle_t cusp_handle, float* d_s, float* d_rho, float* d_N, float* d_I, int npix, int nimages, int nchannels);
+void cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t cusp_handle, float* d_s, float* d_rho, float* d_N, float* d_I, float* d_xx, float* d_yy, float* d_dz, float K00, float K11, int npix, int nimages, int nchannels);

@@ -225,7 +225,7 @@ void SRPS::preprocessing() {
 	float* d_xx = NULL, *d_yy = NULL;
 	cudaMalloc(&d_xx, sizeof(float)*imask.size()); CUDA_CHECK;
 	cudaMalloc(&d_yy, sizeof(float)*imask.size()); CUDA_CHECK;
-	std::pair<float*, float*> d_meshgrid = cuda_based_meshgrid_create(dh->I_w, dh->I_h);
+	std::pair<float*, float*> d_meshgrid = cuda_based_meshgrid_create(dh->I_w, dh->I_h, dh->K[6], dh->K[7]);
 	thrust::copy_if(thrust::device, THRUST_CAST(d_meshgrid.first), THRUST_CAST(d_meshgrid.first) + dh->I_w*dh->I_h, THRUST_CAST(d_mask), THRUST_CAST(d_xx), is_one()); CUDA_CHECK;
 	thrust::copy_if(thrust::device, THRUST_CAST(d_meshgrid.second), THRUST_CAST(d_meshgrid.second) + dh->I_w*dh->I_h, THRUST_CAST(d_mask), THRUST_CAST(d_yy), is_one()); CUDA_CHECK;
 	cudaFree(d_meshgrid.first);
@@ -234,7 +234,8 @@ void SRPS::preprocessing() {
 	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, G.first.row, G.first.col, G.first.val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
 	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, G.second.row, G.second.col, G.second.val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
 	// Normal initialization
-	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, imask.size(), dh->K[0], dh->K[4], dh->K[6], dh->K[7]);
+	float* d_dz = NULL;
+	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, imask.size(), dh->K[0], dh->K[4], &d_dz);
 	WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	std::cout << "Lighting estimation" << std::endl;
 	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
@@ -242,6 +243,7 @@ void SRPS::preprocessing() {
 	std::cout << "Albedo estimation" << std::endl;
 	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
 	WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
+	cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, dh->K[0], dh->K[4], imask.size(), dh->I_n, dh->I_c);
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
 	}
@@ -251,6 +253,7 @@ void SRPS::preprocessing() {
 	cudaFree(d_mask); CUDA_CHECK;
 	cudaFree(d_N); CUDA_CHECK;
 	cudaFree(d_z); CUDA_CHECK;
+	cudaFree(d_dz); CUDA_CHECK;
 	cudaFree(d_z0s); CUDA_CHECK;
 	cudaFree(d_masks); CUDA_CHECK;
 	cudaFree(d_I); CUDA_CHECK;
