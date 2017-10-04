@@ -95,7 +95,10 @@ void SRPS::preprocessing() {
 	cudaMemcpy(d_mask, dh->mask, sizeof(float) * dh->I_h * dh->I_w, cudaMemcpyHostToDevice);
 	float* masks = new float[dh->D.n_row];
 	std::cout << "Small mask calculation" << std::endl;
-	float* d_masks = cuda_based_sparsemat_densevec_mul(cusp_handle, dh->D.row, dh->D.col, dh->D.val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
+	int* d_D_row_ptr, *d_D_col_ind;
+	float* d_D_val;
+	cuda_based_host_COO_to_device_CSR(cusp_handle, &dh->D, &d_D_row_ptr, &d_D_col_ind, &d_D_val);
+	float* d_masks = cuda_based_sparsemat_densevec_mul(cusp_handle, d_D_row_ptr, d_D_col_ind, d_D_val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
 	WRITE_MAT_FROM_DEVICE(d_masks, dh->D.n_row, "masks.mat");
 	// cudaMemcpy(masks, d_masks, sizeof(float)*dh->n_D_rows, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	// printMatrix(dh->mask, dh->I_h, dh->I_w);
@@ -173,7 +176,13 @@ void SRPS::preprocessing() {
 
 	std::cout << "Masked gradient matrix" << std::endl;
 
-	std::pair<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix, imask.size());
+	std::pair<SparseCOO<float>, SparseCOO<float>> G = make_gradient(dh->mask, dh->I_h, dh->I_w, index_in_masked_matrix, (int)imask.size());
+	int* d_Dx_row_ptr, *d_Dx_col_ind, *d_Dy_row_ptr, *d_Dy_col_ind;
+	float* d_Dx_val, *d_Dy_val;
+	cuda_based_host_COO_to_device_CSR(cusp_handle, &G.first, &d_Dx_row_ptr, &d_Dx_col_ind, &d_Dx_val);
+	cuda_based_host_COO_to_device_CSR(cusp_handle, &G.second, &d_Dy_row_ptr, &d_Dy_col_ind, &d_Dy_val);
+	G.first.freeMemory();
+	G.second.freeMemory();
 	std::cout << "Initialization" << std::endl;
 
 	// s initialization
@@ -231,25 +240,35 @@ void SRPS::preprocessing() {
 	cudaFree(d_meshgrid.first);
 	cudaFree(d_meshgrid.second);
 	float *d_zx = NULL, *d_zy = NULL;
-	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, G.first.row, G.first.col, G.first.val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
-	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, G.second.row, G.second.col, G.second.val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
+	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
+	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
 	// Normal initialization
 	float* d_dz = NULL;
-	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, imask.size(), dh->K[0], dh->K[4], &d_dz);
+	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
 	WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	std::cout << "Lighting estimation" << std::endl;
-	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
+	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
 	WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
 	std::cout << "Albedo estimation" << std::endl;
-	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, imask.size(), dh->I_n, dh->I_c);
+	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
 	WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
-	cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, dh->K[0], dh->K[4], imask.size(), dh->I_n, dh->I_c);
+	cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, dh->K[0], dh->K[4], (int)imask.size(), dh->I_n, dh->I_c);
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
 	}
 	if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
 		throw std::runtime_error("CUBLAS Library release of resources failed");
 	}
+	dh->D.freeMemory();
+	cudaFree(d_D_col_ind); CUDA_CHECK;
+	cudaFree(d_D_row_ptr); CUDA_CHECK;
+	cudaFree(d_D_val); CUDA_CHECK;
+	cudaFree(d_Dx_col_ind); CUDA_CHECK;
+	cudaFree(d_Dx_row_ptr); CUDA_CHECK;
+	cudaFree(d_Dx_val); CUDA_CHECK;
+	cudaFree(d_Dy_col_ind); CUDA_CHECK;
+	cudaFree(d_Dy_row_ptr); CUDA_CHECK;
+	cudaFree(d_Dy_val); CUDA_CHECK;
 	cudaFree(d_mask); CUDA_CHECK;
 	cudaFree(d_N); CUDA_CHECK;
 	cudaFree(d_z); CUDA_CHECK;
