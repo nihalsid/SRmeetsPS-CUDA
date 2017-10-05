@@ -14,6 +14,6 @@ private:
 public:
 	SRPS(DataHandler& dh);
 	~SRPS();
-	void preprocessing();
+	void execute();
 };
 

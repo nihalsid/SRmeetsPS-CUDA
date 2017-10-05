@@ -81,7 +81,7 @@ Iter binary_find(Iter begin, Iter end, T val)
 		return end; // not found
 }
 
-void SRPS::preprocessing() {
+void SRPS::execute() {
 	cusparseHandle_t cusp_handle = 0;
 	cublasHandle_t cublas_handle = 0;
 	if (cusparseCreate(&cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
@@ -120,6 +120,7 @@ void SRPS::preprocessing() {
 	cv::Mat zs_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_32FC1, zs);
 	cv::Mat inpaint_locations_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_8UC1, inpaint_locations);
 	cv::inpaint(zs_mat, inpaint_locations_mat, zs_mat, 16, cv::INPAINT_TELEA);
+	cudaMemcpy(d_zs, zs, sizeof(float)*dh->Z0_h*dh->Z0_w, cudaMemcpyHostToDevice); CUDA_CHECK;
 	//printMatrix<float>(zs, dh->Z0_h, dh->Z0_w);
 	// printMatrix<uint8_t>(inpaint_locations, dh->Z0_h, dh->Z0_w);
 	// nppiFilterBilateralGaussBorder_32f_C1R()

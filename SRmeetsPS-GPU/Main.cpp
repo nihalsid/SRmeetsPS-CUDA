@@ -3,8 +3,8 @@
 #include "SRPS.h"
 int main() {
 	DataHandler dh;
-	dh.loadDataFromMatFiles("mitten_12_16_sf2.mat");
+	dh.loadDataFromMatFiles("mitten_sf2.mat");
 	SRPS srps(dh);
-	srps.preprocessing();
+	srps.execute();
 	return 0;
 }
