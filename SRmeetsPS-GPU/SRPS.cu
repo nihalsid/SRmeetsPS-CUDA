@@ -82,6 +82,8 @@ Iter binary_find(Iter begin, Iter end, T val)
 }
 
 void SRPS::execute() {
+	float TOLERANCE = 5e-3;
+	float MAX_ITERATIONS = 10;
 	cusparseHandle_t cusp_handle = 0;
 	cublasHandle_t cublas_handle = 0;
 	if (cusparseCreate(&cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
@@ -99,13 +101,8 @@ void SRPS::execute() {
 	float* d_D_val;
 	cuda_based_host_COO_to_device_CSR(cusp_handle, &dh->D, &d_D_row_ptr, &d_D_col_ind, &d_D_val);
 	float* d_masks = cuda_based_sparsemat_densevec_mul(cusp_handle, d_D_row_ptr, d_D_col_ind, d_D_val, dh->D.n_row, dh->D.n_col, dh->D.n_nz, d_mask);
-	// cudaMemcpy(masks, d_masks, sizeof(float)*dh->n_D_rows, cudaMemcpyDeviceToHost); CUDA_CHECK;
-	// printMatrix(dh->mask, dh->I_h, dh->I_w);
-	//                                                                                                      printMatrix(masks, dh->Z0_h, dh->Z0_w);
 	thrust::replace_if(THRUST_CAST(d_masks), THRUST_CAST(d_masks) + dh->D.n_row, is_less_than_one(), 0.f);
 	cudaMemcpy(masks, d_masks, sizeof(float)*dh->D.n_row, cudaMemcpyDeviceToHost); CUDA_CHECK;
-	//printMatrix<float>(masks, dh->Z0_h, dh->Z0_w);
-	// average z0 across channels to get zs
 	std::cout << "Mean of depth values" << std::endl;
 	float* inpaint_mask = new float[dh->Z0_h*dh->Z0_w];
 	float* zs = new float[dh->Z0_h*dh->Z0_w];
@@ -115,22 +112,15 @@ void SRPS::execute() {
 	cudaMemcpy(zs, d_zs, sizeof(float)*dh->Z0_h*dh->Z0_w, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	cudaMemcpy(inpaint_locations, d_inpaint_locations, sizeof(uint8_t)*dh->Z0_h*dh->Z0_w, cudaMemcpyDeviceToHost); CUDA_CHECK;
 	cudaFree(d_inpaint_locations); CUDA_CHECK;
-	//printMatrix<float>(zs, dh->Z0_h, dh->Z0_w);
 	std::cout << "Inpainting depth values" << std::endl;
 	cv::Mat zs_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_32FC1, zs);
 	cv::Mat inpaint_locations_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_8UC1, inpaint_locations);
 	cv::inpaint(zs_mat, inpaint_locations_mat, zs_mat, 16, cv::INPAINT_TELEA);
 	cudaMemcpy(d_zs, zs, sizeof(float)*dh->Z0_h*dh->Z0_w, cudaMemcpyHostToDevice); CUDA_CHECK;
-	//printMatrix<float>(zs, dh->Z0_h, dh->Z0_w);
-	// printMatrix<uint8_t>(inpaint_locations, dh->Z0_h, dh->Z0_w);
-	// nppiFilterBilateralGaussBorder_32f_C1R()
-	// TODO: add bilateral filter
 	std::cout << "Resample depths" << std::endl;
 	float* z_full = new float[dh->I_h*dh->I_w];
 	cv::Mat z_mat((int)dh->I_w, (int)dh->I_h, CV_32FC1, z_full);
 	cv::resize(zs_mat, z_mat, cv::Size(dh->I_h, dh->I_w), 0, 0, cv::INTER_CUBIC);
-	// cudaMemcpy(z, d_z, sizeof(float)*dh->I_h*dh->I_w, cudaMemcpyDeviceToHost); CUDA_CHECK;
-	// printMatrix<float>(z, dh->I_h, dh->I_w);
 	std::cout << "Mask index calculation" << std::endl;
 	thrust::host_vector<int> imask, imasks;
 	int* index_in_masked_matrix = new int[dh->I_h*dh->I_w];
@@ -146,7 +136,7 @@ void SRPS::execute() {
 		if (masks[i] != 0)
 			imasks.push_back(i);
 	}
-	
+
 	int npix = (int)imask.size();
 	int npixs = (int)imasks.size();
 
@@ -207,7 +197,7 @@ void SRPS::execute() {
 	cudaMalloc(&d_I_complete, dh->I_w * dh->I_h * dh->I_c * dh->I_n * sizeof(float)); CUDA_CHECK;
 	cudaMalloc(&d_mask_extended, dh->I_w * dh->I_h * dh->I_c * dh->I_n * sizeof(float)); CUDA_CHECK;
 	for (int i = 0; i < dh->I_c * dh->I_n; i++)
-		cudaMemcpy(d_mask_extended + dh->I_w * dh->I_h * i, d_mask, dh->I_w * dh->I_h*sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
+		cudaMemcpy(d_mask_extended + dh->I_w * dh->I_h * i, d_mask, dh->I_w * dh->I_h * sizeof(float), cudaMemcpyDeviceToDevice); CUDA_CHECK;
 	cudaMemcpy(d_I_complete, dh->I, dh->I_w * dh->I_h * dh->I_c * dh->I_n * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
 	thrust::device_ptr<float> dt_I = thrust::device_pointer_cast(d_I);
 	thrust::device_ptr<float> dt_I_complete = thrust::device_pointer_cast(d_I_complete);
@@ -250,32 +240,46 @@ void SRPS::execute() {
 	// Normal initialization
 	float* d_dz = NULL;
 	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
-	std::cout << "Lighting estimation" << std::endl;
-	cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
-	WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
-	std::cout << "Albedo estimation" << std::endl;
-	cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
-	WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
-	float error = cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz,d_KT_row_ptr, d_KT_col_ind, d_KT_val, KT.n_row, KT.n_col, KT.n_nz, d_z0s, d_z, dh->K[0], dh->K[4], (int)imask.size(), dh->I_n, dh->I_c);
-	WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
-	cudaFree(d_zx); CUDA_CHECK;
-	cudaFree(d_zy); CUDA_CHECK;
-	d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
-	d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
-	WRITE_MAT_FROM_DEVICE(d_zx, imask.size(), "zx.mat");
-	WRITE_MAT_FROM_DEVICE(d_zy, imask.size(), "zy.mat");
-	cudaFree(d_dz); CUDA_CHECK;
-	cudaFree(d_N); CUDA_CHECK;
-	d_dz = NULL;
-	d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
-	WRITE_MAT_FROM_DEVICE(d_N, imask.size()*4, "N.mat");
+	float last_error = FLT_MAX;
+	bool stop_loop = false;
+	int iteration = 1;
+	do {
+		std::cout << "\nLighting estimation" << std::endl;
+		cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
+		WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
+		std::cout << "Albedo estimation" << std::endl;
+		cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
+		
+		WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
+		
+		std::cout << "Depth estimation" << std::endl;
+		float error = cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_KT_row_ptr, d_KT_col_ind, d_KT_val, KT.n_row, KT.n_col, KT.n_nz, d_z0s, d_z, dh->K[0], dh->K[4], (int)imask.size(), dh->I_n, dh->I_c);
+		if (error > last_error || fabs(last_error - error) / fabs(error) < TOLERANCE || iteration > MAX_ITERATIONS) {
+			stop_loop = true;
+		}
+		last_error = error;
+		WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
+		cudaFree(d_zx); CUDA_CHECK;
+		cudaFree(d_zy); CUDA_CHECK;
+		d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
+		d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
+		WRITE_MAT_FROM_DEVICE(d_zx, imask.size(), "zx.mat");
+		WRITE_MAT_FROM_DEVICE(d_zy, imask.size(), "zy.mat");
+		cudaFree(d_dz); CUDA_CHECK;
+		cudaFree(d_N); CUDA_CHECK;
+		d_dz = NULL;
+		d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
+		WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
+		iteration++;
+	} while (!stop_loop);
+
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
 	}
 	if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
 		throw std::runtime_error("CUBLAS Library release of resources failed");
 	}
-	
+
 	dh->D.freeMemory();
 	cudaFree(d_D_col_ind); CUDA_CHECK;
 	cudaFree(d_D_row_ptr); CUDA_CHECK;

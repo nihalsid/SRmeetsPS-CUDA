@@ -593,7 +593,9 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 		cudaFree(d_A_ch3_val); CUDA_CHECK;
 		cudaFree(d_A_ch3_row_ptr); CUDA_CHECK;
 		cudaFree(d_A_ch3_col_idx); CUDA_CHECK;
-
+		cudaFree(d_A_ch1_Dx_p_A_ch2_Dy_val); CUDA_CHECK;
+		cudaFree(d_A_ch1_Dx_p_A_ch2_Dy_row_ptr); CUDA_CHECK;
+		cudaFree(d_A_ch1_Dx_p_A_ch2_Dy_col_idx); CUDA_CHECK;
 	}
 	cudaMalloc(&d_A_val, sizeof(float) * nnz_A); CUDA_CHECK;
 	cudaMalloc(&d_A_row_ptr, sizeof(float) * (nimages *npix + 1) * nchannels); CUDA_CHECK;
@@ -610,6 +612,7 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 		cudaMemcpyAsync(d_A_val + offset_A, d_A_ch_val[c], sizeof(float) * nnz_A_ch[c], cudaMemcpyDeviceToDevice); CUDA_CHECK;
 		offset_A += nnz_A_ch[c];
 		cudaDeviceSynchronize();
+		cudaFree(d_A_ch_row_idx);
 		cudaFree(d_A_ch_val[c]); CUDA_CHECK;
 		cudaFree(d_A_ch_row_ptr[c]); CUDA_CHECK;
 		cudaFree(d_A_ch_col_idx[c]); CUDA_CHECK;
@@ -664,5 +667,7 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 	cudaFree(d_A__row_ptr); CUDA_CHECK;
 	cudaFree(d_A__col_idx); CUDA_CHECK;
 	cudaFree(d_A__val); CUDA_CHECK;
+	cudaFree(d_KTz); CUDA_CHECK;
+	cudaFree(d_Az); CUDA_CHECK;
 	return t1 + lambda*t2;
 }
