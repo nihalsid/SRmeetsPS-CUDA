@@ -16,3 +16,13 @@ If you use this code, please cite the paper:
 }
 ```
 Contact **Songyou Peng** [:envelope:](mailto:psy920710@gmail.com) for questions, comments and reporting bugs.
+
+
+
+
+
+Commands to run the makefile :
+1. Create a build folder. CD into this folder
+2. Run : cmake ./../SRmeetsPS-CUDA
+3. Run : cmake --build .
+4. Run : ./SRmeetsPS-CUDA
