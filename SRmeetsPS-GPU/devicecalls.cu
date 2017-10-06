@@ -1,5 +1,4 @@
 #include <devicecalls.cuh>
-#include "cgls.cuh"
 #include "Exceptions.h"
 
 float* sort_COO(cusparseHandle_t cusp_handle, int n_rows, int n_cols, int nnz, int* d_row_ind, int* d_col_ind, float* d_vals_unsorted) {
@@ -425,7 +424,7 @@ void cuda_based_lightning_estimation(cublasHandle_t cublas_handle, cusparseHandl
 			int* d_ATA_row_ptr;
 			cudaMalloc(&d_ATA_row_ptr, sizeof(float) * 5);
 			status_cs = cusparseXcoo2csr(cusp_handle, thrust::raw_pointer_cast(dt_row_idx.data()), 16, 4, d_ATA_row_ptr, CUSPARSE_INDEX_BASE_ZERO); CUSPARSE_CHECK(status_cs);
-			cuda_based_preconditioned_conjugate_gradient(cublas_handle, cusp_handle, d_ATA_row_ptr, thrust::raw_pointer_cast(dt_col_idx.data()), thrust::raw_pointer_cast(dt_val.data()), 4, 16, d_x_ij, d_ATb);
+			cuda_based_conjugate_gradient(cublas_handle, cusp_handle, d_ATA_row_ptr, thrust::raw_pointer_cast(dt_col_idx.data()), thrust::raw_pointer_cast(dt_val.data()), 4, 16, d_x_ij, d_ATb);
 			cudaFree(d_ATb); CUDA_CHECK;
 			cudaFree(d_ATA_row_ptr); CUDA_CHECK;
 			cudaFree(d_ATA); CUDA_CHECK;
@@ -528,7 +527,7 @@ void cuda_based_albedo_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 		cudaFree(d_AT_col_ind); CUDA_CHECK;
 		cudaFree(d_AT_val); CUDA_CHECK;
 		cudaFree(d_b); CUDA_CHECK;
-		cuda_based_preconditioned_conjugate_gradient(cublas_handle, cusp_handle, d_ATA_row_ptr, d_ATA_col_ind, d_ATA_val, npix, nnz_ATA, d_rho + npix*c, d_ATb);
+		cuda_based_conjugate_gradient(cublas_handle, cusp_handle, d_ATA_row_ptr, d_ATA_col_ind, d_ATA_val, npix, nnz_ATA, d_rho + npix*c, d_ATb);
 
 		cudaFree(d_ATA_val);
 		cudaFree(d_ATb);
@@ -748,7 +747,7 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 	float d_neg_one = -1.f, d_one = 1.f;
 	status_cs = cusparseScsrmv(cusp_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, npix, npix, nnz_A_, &d_neg_one, descr_A_, d_A__val, d_A__row_ptr, d_A__col_idx, d_z, &d_one, d_B_); CUSPARSE_CHECK(status_cs);
 	//cgls::Solve<float, cgls::CSR>(d_A__val, d_A__row_ptr, d_A__col_idx, npix, npix, nnz_A_, d_B_, d_z, 0, 1e-9f, 100, true);
-	cuda_based_preconditioned_conjugate_gradient(cublas_handle, cusp_handle, d_A__row_ptr, d_A__col_idx, d_A__val, npix, nnz_A_, d_z, d_B_);
+	cuda_based_conjugate_gradient(cublas_handle, cusp_handle, d_A__row_ptr, d_A__col_idx, d_A__val, npix, nnz_A_, d_z, d_B_);
 	cusparseDestroyMatDescr(descr_A_);
 
 	float* d_KTz = cuda_based_sparsemat_densevec_mul(cusp_handle, d_KT_row_ptr, d_KT_col_idx, d_KT_val, n_rows_KT, n_cols_KT, nnz_KT, d_z);

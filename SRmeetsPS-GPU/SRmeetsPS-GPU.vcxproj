@@ -96,7 +96,6 @@ copy "$(CudaToolkitBinDir)\cusparse*.dll" "$(OutDir)"</Command>
     <CudaCompile Include="devicecalls.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="cgls.cuh" />
     <ClInclude Include="devicecalls.cuh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClInclude>
