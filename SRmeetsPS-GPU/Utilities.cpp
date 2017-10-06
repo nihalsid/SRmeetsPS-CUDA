@@ -1,4 +1,5 @@
 #include "Utilities.h"
+#include <cstring>
 
 std::string prev_file = "";
 int prev_line = 0;
