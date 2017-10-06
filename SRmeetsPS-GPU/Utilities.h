@@ -6,6 +6,7 @@
 #include "matio.h"
 #include "cublas_v2.h"
 #include "cusparse_v2.h"
+#include <ctime>
 
 #ifdef _DEBUG
 #define CUDA_CHECK cuda_check(__FILE__,__LINE__)
@@ -16,13 +17,13 @@
 #ifdef _DEBUG
 #define CUSPARSE_CHECK(st) cusparse_check(st)
 #else
-#define CUSPBLAS_CHECK(e)
+#define CUSPARSE_CHECK(e)
 #endif
 
 #ifdef _DEBUG
 #define CUBLAS_CHECK(st) cublas_check(st)
 #else
-#define CUSPBLAS_CHECK(e)
+#define CUBLAS_CHECK(e)
 #endif
 
 void cuda_check(std::string file, int line);
@@ -33,12 +34,26 @@ void cublas_check(cublasStatus_t status);
 do {																				\
 	float* temp =  new float[size];													\
 	cudaMemcpy(temp, arr, size*sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;	\
+	std::cout << "[";																\
 	for (int i = 0; i < size; i++) {												\
 		std::cout << temp[i] << " ";												\
 	}																				\
-	std::cout << std::endl;															\
+	std::cout << "];\n";																\
 	delete[] temp;																	\
 }while(false)
+
+#define PRINT_FROM_DEVICE_INT(arr, size)											\
+do {																				\
+	int* temp =  new int[size];														\
+	cudaMemcpy(temp, arr, size*sizeof(int), cudaMemcpyDeviceToHost); CUDA_CHECK;	\
+	std::cout << "[";																\
+	for (int i = 0; i < size; i++) {												\
+		std::cout << temp[i] << " ";												\
+	}																				\
+	std::cout << "];\n";															\
+	delete[] temp;																	\
+}while(false)
+
 
 #define WRITE_MAT_FROM_DEVICE(arr, size, filename)									\
 do {																				\
@@ -148,4 +163,34 @@ struct DataHandler {
 	void freeMemory();
 	void loadDataFromMatFiles(char * filename);
 
+};
+
+class Timer
+{
+public:
+	Timer() : tStart(0), running(false), sec(0.f)
+	{
+	}
+	void start()
+	{
+		tStart = clock();
+		running = true;
+	}
+	void end()
+	{
+		if (!running) { sec = 0; return; }
+		cudaDeviceSynchronize();
+		clock_t tEnd = clock();
+		sec = (float)(tEnd - tStart) / CLOCKS_PER_SEC;
+		running = false;
+	}
+	float get()
+	{
+		if (running) end();
+		return sec;
+	}
+private:
+	clock_t tStart;
+	bool running;
+	float sec;
 };

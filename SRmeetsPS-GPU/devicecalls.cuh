@@ -6,6 +6,7 @@
 #include "thrust/device_vector.h"
 #include "device_launch_parameters.h"
 #include "Utilities.h"
+#include <thrust/device_ptr.h>
 
 #define THRUST_CAST(ptr) thrust::device_pointer_cast(ptr)
 

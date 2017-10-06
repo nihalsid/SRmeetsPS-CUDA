@@ -244,46 +244,47 @@ void SRPS::execute() {
 	// Normal initialization
 	float* d_dz = NULL;
 	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
-	float last_error = FLT_MAX;
+	float last_error = NAN;
 	bool stop_loop = false;
 	int iteration = 1;
 	do {
-		std::cout << "\nLighting estimation" << std::endl;
+		Timer timer;
+		timer.start();
 		cuda_based_lightning_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
-		// WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
-		std::cout << "Albedo estimation" << std::endl;
+		timer.end();
+		printf("\n%-25s: %-6.6fs\n", "Lightning Estimation", timer.get());
+		timer.start();
 		cuda_based_albedo_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, (int)imask.size(), dh->I_n, dh->I_c);
-		
-		// WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
-		
-		std::cout << "Depth estimation" << std::endl;
+		timer.end();
+		printf("%-25s: %-6.6fs\n", "Albedo Estimation", timer.get());
+		timer.start();
 		float error = cuda_based_depth_estimation(cublas_handle, cusp_handle, d_s, d_rho, d_N, d_I, d_xx, d_yy, d_dz, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_KT_row_ptr, d_KT_col_ind, d_KT_val, KT.n_row, KT.n_col, KT.n_nz, d_z0s, d_z, dh->K[0], dh->K[4], (int)imask.size(), dh->I_n, dh->I_c);
-		// WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
-		
+		timer.end();
+		printf("%-25s: %-6.6fs\n", "Depth Estimation", timer.get());
 		float rel_err = fabs(last_error - error) / fabs(error);
 		if (error > last_error || rel_err < TOLERANCE || iteration > MAX_ITERATIONS) {
 			stop_loop = true;
 		}
-		std::cout << "E: " << error << "\t R: " << rel_err << std::endl;
 		last_error = error;
+		printf("\nIteration %02d summary\n", iteration, error, rel_err);
+		printf("%-25s: %-6.3f\n", "Error", error);
+		printf("%-25s: %-6.3f\n", "Relative Error",rel_err);
 		cudaFree(d_zx); CUDA_CHECK;
 		cudaFree(d_zy); CUDA_CHECK;
 		d_zx = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dx_row_ptr, d_Dx_col_ind, d_Dx_val, G.first.n_row, G.first.n_col, G.first.n_nz, d_z);
 		d_zy = cuda_based_sparsemat_densevec_mul(cusp_handle, d_Dy_row_ptr, d_Dy_col_ind, d_Dy_val, G.second.n_row, G.second.n_col, G.second.n_nz, d_z);
-		// WRITE_MAT_FROM_DEVICE(d_zx, imask.size(), "zx.mat");
-		// WRITE_MAT_FROM_DEVICE(d_zy, imask.size(), "zy.mat");
 		cudaFree(d_dz); CUDA_CHECK;
 		cudaFree(d_N); CUDA_CHECK;
 		d_dz = NULL;
 		d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
-		// WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 		iteration++;
+		WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
+		WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
+		WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
+		WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	} while (!stop_loop);
 
-	WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
-	WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
-	WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
-	WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
+	
 	
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
