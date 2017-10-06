@@ -193,3 +193,85 @@ std::ostream& operator<<(std::ostream& os, const SparseCOO<float> sp) {
 	os << "rows = " << sp.n_row << ", cols = " << sp.n_col << std::endl;
 	return os;
 }
+
+cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows , int cols, int nchannels) {
+	float* h_rho = new float[imask.size()*nchannels];
+	cudaMemcpy(h_rho, d_rho, sizeof(float)*imask.size()*nchannels, cudaMemcpyDeviceToHost);
+	cv::Mat rho_mat = cv::Mat::zeros(rows, cols, CV_MAKETYPE(CV_32F, nchannels));
+	std::vector<float> mediansm5pstddev;
+	for (int c = 0; c < nchannels; c++) {
+		std::vector<float> rho_ch(h_rho + c*imask.size(), h_rho + (c + 1)*imask.size());
+		float sum = std::accumulate(rho_ch.begin(), rho_ch.end(), 0.f);
+		float mean = sum / rho_ch.size();
+		float sqr_sum = std::inner_product(rho_ch.begin(), rho_ch.end(), rho_ch.begin(), 0.0);
+		float std_dev = std::sqrtf(sqr_sum / rho_ch.size() - mean*mean);
+		float median;
+		std::sort(rho_ch.begin(), rho_ch.end());
+		if (imask.size() % 2 == 0) {
+			median = (rho_ch[imask.size() / 2 - 1] + rho_ch[imask.size() / 2]) / 2;
+		}
+		else {
+			median = rho_ch[imask.size() / 2];
+		}
+		mediansm5pstddev.push_back(median + 5 * std_dev);
+		std::cout << (median + 5 * std_dev) << std::endl;
+
+	}
+	// Assume 3 channeled image for now - TODO: find a way to assign n channel data
+	for (int i = 0; i < imask.size(); i++) {
+		int row_idx = imask[i] % rows;
+		int col_idx = imask[i] / rows;
+		float vals[3];
+		for (int c = 0; c < nchannels; c++) {
+			float val = std::min(mediansm5pstddev[c], h_rho[c*imask.size()+i]);
+			vals[c] = std::min(1.f, std::max(0.f, val));
+		}
+		rho_mat.at<cv::Vec3f>(row_idx, col_idx) = cv::Vec3f(vals[2], vals[1], vals[0]);
+		//std::cout << cv::Vec3f(vals[0], vals[1], vals[2]) << ", ";
+	}
+	cv::resize(rho_mat, rho_mat, cv::Size(0,0), 0.4, 0.4);
+	delete h_rho;
+	return rho_mat;
+}
+
+cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, int cols) {
+	float* h_N = new float[imask.size()*3];
+	cudaMemcpy(h_N, d_N, sizeof(float)*imask.size()*3, cudaMemcpyDeviceToHost);
+	cv::Mat N_mat = cv::Mat::zeros(rows, cols, CV_32FC3);
+	for (int i = 0; i < imask.size(); i++) {
+		int row_idx = imask[i] % rows;
+		int col_idx = imask[i] / rows;
+		float vals[3];
+		vals[0] = std::min(1.f, std::max(0.f,0.5f + 0.5f * h_N[imask.size() * 0 + i]));
+		vals[1] = std::min(1.f, std::max(0.f, 0.5f + 0.5f * h_N[imask.size() * 1 + i]));
+		vals[2] = std::min(1.f, std::max(0.f, 0.5f - 0.5f * h_N[imask.size() * 2 + i]));
+		N_mat.at<cv::Vec3f>(row_idx, col_idx) = cv::Vec3f(vals[2], vals[1], vals[0]);
+		//std::cout << cv::Vec3f(vals[0], vals[1], vals[2]) << ", ";
+	}
+	cv::normalize(N_mat, N_mat, 0.f, 1.f, CV_MINMAX);
+	cv::resize(N_mat, N_mat, cv::Size(0, 0), 0.4, 0.4);
+	delete h_N;
+	return N_mat;
+}
+
+cv::Mat z_as_opencv_mat(float* d_z, thrust::host_vector<int>& imask, int rows, int cols, float scale) {
+	float* h_z = new float[imask.size()];
+	cudaMemcpy(h_z, d_z, sizeof(float)*imask.size(), cudaMemcpyDeviceToHost);
+	cv::Mat z_mat = cv::Mat::zeros(imask.size(), 1, CV_32FC1);
+	for (int i = 0; i < imask.size(); i++) {
+		z_mat.at<float>(i, 0) = -h_z[i];
+	}
+	cv::normalize(z_mat, z_mat, 0, 1, CV_MINMAX);
+	z_mat *= 255.0;
+	z_mat.convertTo(z_mat, CV_8U);
+	cv::applyColorMap(z_mat, z_mat, cv::COLORMAP_BONE);
+	cv::Mat z_retval = cv::Mat::zeros(rows, cols, CV_8UC3);
+	for (int i = 0; i < imask.size(); i++) {
+		int row_idx = imask[i] % rows;
+		int col_idx = imask[i] / rows;
+		z_retval.at<cv::Vec3b>(row_idx, col_idx) = z_mat.at<cv::Vec3b>(i, 0);
+	}
+	cv::resize(z_retval, z_retval, cv::Size(0, 0), scale, scale);
+	delete h_z;
+	return z_retval;
+}

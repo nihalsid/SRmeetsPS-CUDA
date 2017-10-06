@@ -83,7 +83,7 @@ Iter binary_find(Iter begin, Iter end, T val)
 
 void SRPS::execute() {
 	float TOLERANCE = 5e-3;
-	float MAX_ITERATIONS = 10;
+	int MAX_ITERATIONS = 10;
 	cusparseHandle_t cusp_handle = 0;
 	cublasHandle_t cublas_handle = 0;
 	if (cusparseCreate(&cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
@@ -244,6 +244,7 @@ void SRPS::execute() {
 	// Normal initialization
 	float* d_dz = NULL;
 	float* d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
+	float* d_init_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
 	float last_error = NAN;
 	bool stop_loop = false;
 	int iteration = 1;
@@ -278,13 +279,17 @@ void SRPS::execute() {
 		d_dz = NULL;
 		d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
 		iteration++;
+		cv::imshow("Albedo", rho_as_opencv_mat(d_rho, imask, dh->I_h, dh->I_w, dh->I_c));
+		cv::imshow("Normals-Initial", N_as_opencv_mat(d_init_N, imask, dh->I_h, dh->I_w));
+		cv::imshow("Normals", N_as_opencv_mat(d_N, imask, dh->I_h, dh->I_w));
+		cv::waitKey(5);
 		WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
 		WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
 		WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
 		WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	} while (!stop_loop);
 
-	
+	cv::waitKey(0);
 	
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
 		throw std::runtime_error("CUSPARSE Library release of resources failed");
@@ -305,6 +310,7 @@ void SRPS::execute() {
 	cudaFree(d_Dy_val); CUDA_CHECK;
 	cudaFree(d_mask); CUDA_CHECK;
 	cudaFree(d_N); CUDA_CHECK;
+	cudaFree(d_init_N); CUDA_CHECK;
 	cudaFree(d_z); CUDA_CHECK;
 	cudaFree(d_dz); CUDA_CHECK;
 	cudaFree(d_z0s); CUDA_CHECK;
