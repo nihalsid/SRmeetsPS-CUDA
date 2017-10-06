@@ -214,8 +214,6 @@ cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int row
 			median = rho_ch[imask.size() / 2];
 		}
 		mediansm5pstddev.push_back(median + 5 * std_dev);
-		std::cout << (median + 5 * std_dev) << std::endl;
-
 	}
 	// Assume 3 channeled image for now - TODO: find a way to assign n channel data
 	for (int i = 0; i < imask.size(); i++) {
