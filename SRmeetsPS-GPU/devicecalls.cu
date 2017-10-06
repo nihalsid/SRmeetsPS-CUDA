@@ -1,5 +1,4 @@
-#include <devicecalls.cuh>
-#include "cgls.cuh"
+#include "devicecalls.cuh"
 #include "Exceptions.h"
 
 float* sort_COO(cusparseHandle_t cusp_handle, int n_rows, int n_cols, int nnz, int* d_row_ind, int* d_col_ind, float* d_vals_unsorted) {
