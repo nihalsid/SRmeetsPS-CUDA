@@ -29,5 +29,5 @@ make -B
 ```
 To run, use the command
 ```
-build/SRmeetsPS-CUDA datasets/mitten_sf2.mat
+build/SRmeetsPS-CUDA dataset/mitten_sf2.mat
 ```
