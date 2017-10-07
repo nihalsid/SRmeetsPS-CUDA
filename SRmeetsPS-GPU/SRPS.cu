@@ -117,8 +117,13 @@ void SRPS::execute() {
 	cv::Mat zs_out_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_32FC1);
 	cv::Mat inpaint_locations_mat((int)dh->Z0_w, (int)dh->Z0_h, CV_8UC1, inpaint_locations);
 	cv::inpaint(zs_mat, inpaint_locations_mat, zs_mat, 16, cv::INPAINT_TELEA);
-	cv::bilateralFilter(zs_mat, zs_out_mat, -1, 4, 4);
+	double min, max;
+	cv::minMaxIdx(zs_mat, &min, &max);
+	zs_mat = zs_mat / max;
+	cv::bilateralFilter(zs_mat, zs_out_mat, -1, 2, 2);
+	zs_out_mat *= max;
 	cudaMemcpy(d_zs, zs_out_mat.data, sizeof(float)*dh->Z0_h*dh->Z0_w, cudaMemcpyHostToDevice); CUDA_CHECK;
+	WRITE_MAT_FROM_DEVICE(d_zs, dh->Z0_h*dh->Z0_w, "zs_init.mat");
 	std::cout << "Resample depths" << std::endl;
 	float* z_full = new float[dh->I_h*dh->I_w];
 	cv::Mat z_mat((int)dh->I_w, (int)dh->I_h, CV_32FC1, z_full);
@@ -220,8 +225,7 @@ void SRPS::execute() {
 	float *d_z0s = NULL;
 	cudaMalloc(&d_z0s, sizeof(float)*imasks.size()); CUDA_CHECK;;
 	thrust::copy_if(thrust::device, THRUST_CAST(d_zs), THRUST_CAST(d_zs) + dh->Z0_h*dh->Z0_w, THRUST_CAST(d_masks), THRUST_CAST(d_z0s), is_one()); CUDA_CHECK;
-	WRITE_MAT_FROM_DEVICE(d_z0s, imasks.size(), "z0s.mat");
-
+	
 	float* d_z = NULL, *d_z_full = NULL;
 	cudaMalloc(&d_z, sizeof(float)*imask.size()); CUDA_CHECK;
 	cudaMalloc(&d_z_full, sizeof(float)*dh->I_h*dh->I_w); CUDA_CHECK;
@@ -279,7 +283,7 @@ void SRPS::execute() {
 		d_dz = NULL;
 		d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
 		iteration++;
-		float scale = 0.6f;
+		float scale = 0.425f;
 		cv::imshow("Normals-Initial", N_as_opencv_mat(d_init_N, imask, dh->I_h, dh->I_w, scale));
 		cv::moveWindow("Normals-Initial", 10, 10);
 		cv::imshow("Normals-Current-Iteration", N_as_opencv_mat(d_N, imask, dh->I_h, dh->I_w, scale));
@@ -292,7 +296,7 @@ void SRPS::execute() {
 		WRITE_MAT_FROM_DEVICE(d_z, imask.size(), "z.mat");
 		WRITE_MAT_FROM_DEVICE(d_N, imask.size() * 4, "N.mat");
 	} while (!stop_loop);
-
+	std::cout << "Done!" << std::endl;
 	cv::waitKey(0);
 	
 	if (cusparseDestroy(cusp_handle) != CUSPARSE_STATUS_SUCCESS) {
