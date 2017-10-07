@@ -420,13 +420,13 @@ void cuda_based_lightning_estimation(cublasHandle_t cublas_handle, cusparseHandl
 			float* d_ATb = NULL;
 			cudaMalloc(&d_ATb, sizeof(float) * 4); CUDA_CHECK;
 			status_cb = cublasSgemm(cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, 4, 4, npix, &d_one, d_A_ij, npix, d_A_ij, npix, &d_zero, d_ATA, 4); CUBLAS_CHECK(status_cb);
-			status_cb = cublasSgemv(cublas_handle, CUBLAS_OP_T, npix, 4, &d_one, d_A, npix, d_b_ij, 1, &d_zero, d_ATb, 1); CUBLAS_CHECK(status_cb);
+			status_cb = cublasSgemv(cublas_handle, CUBLAS_OP_T, npix, 4, &d_one, d_A_ij, npix, d_b_ij, 1, &d_zero, d_ATb, 1); CUBLAS_CHECK(status_cb);
 			status_cb = cublasSgemv(cublas_handle, CUBLAS_OP_N, 4, 4, &d_minus_one, d_ATA, 4, d_x_ij, 1, &d_one, d_ATb, 1); CUBLAS_CHECK(status_cb);
 			thrust::device_vector<int> dt_row_idx(16);
 			thrust::device_vector<int> dt_col_idx(16);
 			thrust::device_vector<float> dt_val(16);
 			thrust::device_ptr<float> dt_ATA = thrust::device_pointer_cast(d_ATA);
-			for (int m = 0; m < 16; m++) {
+			for (int m = 0; m < 16; m++) { 
 				dt_row_idx[m] = m / 4;
 				dt_col_idx[m] = m % 4;
 				dt_val[m] = dt_ATA[dt_row_idx[m] + 4 * dt_col_idx[m]];
@@ -756,7 +756,6 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 	cusparseSetMatIndexBase(descr_A_, CUSPARSE_INDEX_BASE_ZERO);
 	float d_neg_one = -1.f, d_one = 1.f;
 	status_cs = cusparseScsrmv(cusp_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, npix, npix, nnz_A_, &d_neg_one, descr_A_, d_A__val, d_A__row_ptr, d_A__col_idx, d_z, &d_one, d_B_); CUSPARSE_CHECK(status_cs);
-	//cgls::Solve<float, cgls::CSR>(d_A__val, d_A__row_ptr, d_A__col_idx, npix, npix, nnz_A_, d_B_, d_z, 0, 1e-9f, 100, true);
 	cuda_based_conjugate_gradient(cublas_handle, cusp_handle, d_A__row_ptr, d_A__col_idx, d_A__val, npix, nnz_A_, d_z, d_B_);
 	cusparseDestroyMatDescr(descr_A_);
 

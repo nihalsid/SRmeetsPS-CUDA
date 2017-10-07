@@ -75,6 +75,25 @@ do {																			\
 	delete[] temp;																\
 }while(false)
 
+#define WRITE_MAT_FROM_DEVICE_SPARSE(cusp_handle, d_rptr, d_cidx, d_val,nnz, rows, cols, filename)\
+do {																							\
+	int* d_ridx = NULL;																			\
+	cudaMalloc(&d_ridx, sizeof(int)*nnz);														\
+	cusparseXcsr2coo(cusp_handle, d_rptr, nnz, rows, d_ridx, CUSPARSE_INDEX_BASE_ZERO);			\
+	int* colidx =  new int[nnz];																\
+	int* rowidx =  new int[nnz];																\
+	float* val = new float[nnz];																\
+	cudaMemcpy(rowidx, d_ridx, nnz * sizeof(int), cudaMemcpyDeviceToHost); CUDA_CHECK;			\
+	cudaMemcpy(colidx, d_cidx, nnz * sizeof(int), cudaMemcpyDeviceToHost); CUDA_CHECK;			\
+	cudaMemcpy(val, d_val, nnz * sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;			\
+	write_MAT_sparse(rowidx, colidx, val, nnz, rows, cols, filename);							\
+	cudaFree(d_ridx); CUDA_CHECK;																\
+	delete[] colidx;																			\
+	delete[] val;																				\
+	delete[] rowidx;																			\
+} while (false);
+
+
 #define PRINT_SPARSE_CSR(cusp_handle, d_row_ptr, d_col_ind, d_val, nnz, nrows, ncols)				\
 do {																								\
 	int* d_row_index = NULL;																		\
@@ -89,6 +108,7 @@ do {																								\
 	spm.freeMemory();																				\
 }while(false)
 
+void write_MAT_sparse(int* ridx, int* cidx, float* val, int nnz, int rows, int cols, const char* filename);
 void write_MAT_ints(int* data, size_t length, char* filename);
 void write_MAT_floats(float* data, size_t length, char* filename);
 cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows, int cols, int nchannels, float scale);

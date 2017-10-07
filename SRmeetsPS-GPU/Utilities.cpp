@@ -79,6 +79,46 @@ void write_MAT_ints(int* data, size_t length, char* filename) {
 	Mat_Close(matfp);
 }
 
+
+void write_MAT_sparse(int* ridx, int* cidx, float* val, int nnz, int rows, int cols, const char* filename) {
+	mat_t    *matfp;
+	matvar_t *matvar;
+	size_t    dims_1[2] = { nnz, 1 };
+	size_t    dims_2[2] = { 1, 1 };
+	matfp = Mat_CreateVer(filename, NULL, MAT_FT_MAT73);
+	if (NULL == matfp) {
+		std::runtime_error("Error creating MAT file\n");
+	}
+	matvar = Mat_VarCreate("ii", MAT_C_INT32, MAT_T_INT32, 2, dims_1, ridx, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	matvar = Mat_VarCreate("jj", MAT_C_INT32, MAT_T_INT32, 2, dims_1, cidx, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	matvar = Mat_VarCreate("kk", MAT_C_SINGLE, MAT_T_SINGLE, 2, dims_1, val, 0);
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	matvar = Mat_VarCreate("rows", MAT_C_INT32, MAT_T_INT32, 2, dims_2, &rows, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	matvar = Mat_VarCreate("cols", MAT_C_INT32, MAT_T_INT32, 2, dims_2, &cols, 0);
+	if (NULL == matvar) {
+		std::runtime_error("Error creating variable\n");
+	}
+	Mat_VarWrite(matfp, matvar, MAT_COMPRESSION_NONE);
+	Mat_VarFree(matvar);
+	Mat_Close(matfp);
+}
+
 void DataHandler::extractAndCastToFromDoubleToFloat(float* dest,void* source, int length) {
 	double *double_data = new double[length];
 	memcpy(double_data, source, sizeof(double) * length);
