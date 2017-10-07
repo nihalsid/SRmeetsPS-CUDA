@@ -204,7 +204,7 @@ cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int row
 		float sum = std::accumulate(rho_ch.begin(), rho_ch.end(), 0.f);
 		float mean = sum / rho_ch.size();
 		float sqr_sum = std::inner_product(rho_ch.begin(), rho_ch.end(), rho_ch.begin(), 0.0);
-		float std_dev = std::sqrtf(sqr_sum / rho_ch.size() - mean*mean);
+		float std_dev = std::sqrt(sqr_sum / rho_ch.size() - mean*mean);
 		float median;
 		std::sort(rho_ch.begin(), rho_ch.end());
 		if (imask.size() % 2 == 0) {

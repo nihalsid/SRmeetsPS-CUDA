@@ -21,8 +21,13 @@ Contact **Songyou Peng** [:envelope:](mailto:psy920710@gmail.com) for questions,
 
 
 
-Commands to run the makefile :
-1. Create a build folder. CD into this folder
-2. Run : cmake ./../SRmeetsPS-CUDA
-3. Run : cmake --build .
-4. Run : ./SRmeetsPS-CUDA
+### Building and running
+In the root folder run
+```
+export LD_LIBRARY_PATH=./opencv/lib:./matio/lib
+make -B
+```
+To run, use the command
+```
+build/SRmeetsPS-CUDA datasets/mitten_sf2.mat
+```

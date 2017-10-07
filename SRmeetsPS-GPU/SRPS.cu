@@ -267,7 +267,7 @@ void SRPS::execute() {
 			stop_loop = true;
 		}
 		last_error = error;
-		printf("\nIteration %02d summary\n", iteration, error, rel_err);
+		printf("\nIteration %02d summary\n", iteration);
 		printf("%-25s: %-6.3f\n", "Error", error);
 		printf("%-25s: %-6.3f\n", "Relative Error",rel_err);
 		cudaFree(d_zx); CUDA_CHECK;
