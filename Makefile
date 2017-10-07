@@ -6,5 +6,8 @@ LIBRARY_DIRS = "matio/lib,opencv/lib"
 NVCC_FLAGS = "-std=c++11"
 OUTPUT_PATH = "build/SRmeetsPS-CUDA"
 
-SRmeetsPS-GPU:
+all:
 	nvcc $(NVCC_FLAGS) -o $(OUTPUT_PATH) $(SOURCE_FILES) -I $(INCLUDE_DIRS) -L $(LIBRARY_DIRS) $(LIBRARIES) 
+	
+clean:
+	rm ./build/*

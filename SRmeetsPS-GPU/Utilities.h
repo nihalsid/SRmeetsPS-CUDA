@@ -91,9 +91,9 @@ do {																								\
 
 void write_MAT_ints(int* data, size_t length, char* filename);
 void write_MAT_floats(float* data, size_t length, char* filename);
-cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows, int cols, int nchannels);
+cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows, int cols, int nchannels, float scale);
 cv::Mat z_as_opencv_mat(float* d_z, thrust::host_vector<int>& imask, int rows, int cols, float scale = 0.4f);
-cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, int cols);
+cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, int cols, float scale);
 template <typename T>
 void printMatrix(T* mat, size_t h, size_t w) {
 	for (int i = 0; i < h; i++) {

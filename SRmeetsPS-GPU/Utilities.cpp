@@ -194,7 +194,7 @@ std::ostream& operator<<(std::ostream& os, const SparseCOO<float> sp) {
 	return os;
 }
 
-cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows , int cols, int nchannels) {
+cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int rows , int cols, int nchannels, float scale) {
 	float* h_rho = new float[imask.size()*nchannels];
 	cudaMemcpy(h_rho, d_rho, sizeof(float)*imask.size()*nchannels, cudaMemcpyDeviceToHost);
 	cv::Mat rho_mat = cv::Mat::zeros(rows, cols, CV_MAKETYPE(CV_32F, nchannels));
@@ -227,12 +227,12 @@ cv::Mat rho_as_opencv_mat(float* d_rho, thrust::host_vector<int>& imask, int row
 		rho_mat.at<cv::Vec3f>(row_idx, col_idx) = cv::Vec3f(vals[2], vals[1], vals[0]);
 		//std::cout << cv::Vec3f(vals[0], vals[1], vals[2]) << ", ";
 	}
-	cv::resize(rho_mat, rho_mat, cv::Size(0,0), 0.4, 0.4);
+	cv::resize(rho_mat, rho_mat, cv::Size(0,0), scale, scale);
 	delete h_rho;
 	return rho_mat;
 }
 
-cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, int cols) {
+cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, int cols, float scale) {
 	float* h_N = new float[imask.size()*3];
 	cudaMemcpy(h_N, d_N, sizeof(float)*imask.size()*3, cudaMemcpyDeviceToHost);
 	cv::Mat N_mat = cv::Mat::zeros(rows, cols, CV_32FC3);
@@ -247,7 +247,7 @@ cv::Mat N_as_opencv_mat(float* d_N, thrust::host_vector<int>& imask, int rows, i
 		//std::cout << cv::Vec3f(vals[0], vals[1], vals[2]) << ", ";
 	}
 	cv::normalize(N_mat, N_mat, 0.f, 1.f, CV_MINMAX);
-	cv::resize(N_mat, N_mat, cv::Size(0, 0), 0.4, 0.4);
+	cv::resize(N_mat, N_mat, cv::Size(0, 0), scale, scale);
 	delete h_N;
 	return N_mat;
 }

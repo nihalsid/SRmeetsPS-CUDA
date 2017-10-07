@@ -221,6 +221,11 @@ float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d
 	normalize_N << < grid, block >> > (d_N, *d_dz, npix); CUDA_CHECK;
 	return d_N;
 }
+
+/*
+ * This code is picked up from CUDA samples with minor modifications
+ * http://docs.nvidia.com/cuda/cuda-samples/index.html#preconditioned-conjugate-gradient
+ */
 void cuda_based_conjugate_gradient(cublasHandle_t& cublasHandle, cusparseHandle_t& cusparseHandle, int* d_A_row, int* d_A_col, float* d_A_val, int N, int nnz, float* d_x, float* d_b) {
 	const float tol = 1e-9f;
 	const int max_iter = 100;
@@ -272,6 +277,11 @@ void cuda_based_conjugate_gradient(cublasHandle_t& cublasHandle, cusparseHandle_
 	cudaFree(d_y);
 	cudaFree(d_p);
 }
+
+/*
+ * This code is picked up from CUDA samples with minor modifications
+ * http://docs.nvidia.com/cuda/cuda-samples/index.html#preconditioned-conjugate-gradient
+ */
 void cuda_based_preconditioned_conjugate_gradient(cublasHandle_t& cublasHandle, cusparseHandle_t& cusparseHandle, int* d_A_row, int* d_A_col, float* d_A_val, int N, int nnz, float* d_x, float* d_b) {
 	const float tol = 1e-9f;
 	const int max_iter = 100;

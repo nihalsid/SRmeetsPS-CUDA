@@ -279,9 +279,13 @@ void SRPS::execute() {
 		d_dz = NULL;
 		d_N = cuda_based_normal_init(cublas_handle, d_z, d_zx, d_zy, d_xx, d_yy, (int)imask.size(), dh->K[0], dh->K[4], &d_dz);
 		iteration++;
-		cv::imshow("Albedo", rho_as_opencv_mat(d_rho, imask, dh->I_h, dh->I_w, dh->I_c));
-		cv::imshow("Normals-Initial", N_as_opencv_mat(d_init_N, imask, dh->I_h, dh->I_w));
-		cv::imshow("Normals", N_as_opencv_mat(d_N, imask, dh->I_h, dh->I_w));
+		float scale = 0.6f;
+		cv::imshow("Normals-Initial", N_as_opencv_mat(d_init_N, imask, dh->I_h, dh->I_w, scale));
+		cv::moveWindow("Normals-Initial", 10, 10);
+		cv::imshow("Normals-Current-Iteration", N_as_opencv_mat(d_N, imask, dh->I_h, dh->I_w, scale));
+		cv::moveWindow("Normals-Current-Iteration", 30 + dh->I_h * scale, 10);
+		cv::imshow("Albedo", rho_as_opencv_mat(d_rho, imask, dh->I_h, dh->I_w, dh->I_c, scale));
+		cv::moveWindow("Albedo", 30 + 2 * dh->I_h * scale,10);
 		cv::waitKey(5);
 		WRITE_MAT_FROM_DEVICE(d_s, dh->I_n * dh->I_c * 4, "s.mat");
 		WRITE_MAT_FROM_DEVICE(d_rho, imask.size() * dh->I_c, "rho.mat");
