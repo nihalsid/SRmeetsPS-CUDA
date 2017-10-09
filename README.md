@@ -25,7 +25,7 @@ Contact **Songyou Peng** [:envelope:](mailto:psy920710@gmail.com) for questions,
 In the root folder run
 ```
 export LD_LIBRARY_PATH=./opencv/lib:./matio/lib
-make -B
+make
 ```
 To run, use the command
 ```
