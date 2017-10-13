@@ -27,6 +27,7 @@ int main(int argc, char* argv[]) {
 	Preferences::blockX = parser.get<int>("blockx");
 	Preferences::blockY = parser.get<int>("blocky");
 	Preferences::deviceId = parser.get<int>("device");
+
 	if (parser.get<cv::String>("dstype").compare("matlab") == 0) {
 		MatFileDataHandler dh;
 		dh.loadDataFromMatFiles(parser.get<cv::String>("dsloc").c_str());

@@ -320,7 +320,11 @@ cv::Mat z_as_opencv_mat(float* d_z, thrust::host_vector<int>& imask, int rows, i
 }
 
 template <typename T>
-void cv_image_to_column_major_1_channel(cv::Mat& mat, float* arr, float quantizer = 255.f, float min = 0, float max = 1) {
+void cv_image_to_column_major_1_channel(const cv::Mat& mat, float* arr, float quantizer = 255.f, float min = 0, float max = 1) {
+	// check
+	if (mat.data == NULL) {
+		std::cerr << "ERROR: Could not load image " << std::endl;
+	}
 	for (int i = 0; i < mat.rows; i++) {
 		for (int j = 0; j < mat.cols; j++) {
 			arr[i + j*mat.rows] = min + (mat.at<T>(i, j) / quantizer)*(max - min);
@@ -328,7 +332,11 @@ void cv_image_to_column_major_1_channel(cv::Mat& mat, float* arr, float quantize
 	}
 }
 
-void cv_image_to_column_major_3_channel(cv::Mat& mat, float* arr) {
+void cv_image_to_column_major_3_channel(const cv::Mat& mat, float* arr) {
+	// check
+	if (mat.data == NULL) {
+		std::cerr << "ERROR: Could not load image " << std::endl;
+	}
 	for (int c = 0; c < mat.channels(); c++) {
 		for (int i = 0; i < mat.rows; i++) {
 			for (int j = 0; j < mat.cols; j++) {

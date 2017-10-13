@@ -27,7 +27,27 @@ In the root folder run
 export LD_LIBRARY_PATH=./opencv/lib:./matio/lib
 make
 ```
-To run, use the command
+
+To run, the follwing options are available:
+	--blockx, -x (value:256)
+		block dimension x
+	--blocky, -y (value:4)
+		block dimension y
+	-d, --dsloc (value:./dataset/Images/Mitten)
+		path to dataset mat file or folder containing images
+	--device, -g (value:0)
+		cuda device to run the application on
+	--dstype, -t (value:images)
+		dataset type, can be matlab or images
+	-h, --help, --usage
+		print help
+
+Example 1 from mat files :
 ```
-build/SRmeetsPS-CUDA dataset/mitten_sf2.mat
+build/SRmeetsPS-CUDA --dstype="matlab" --dsloc="./dataset/Matlab/mitten_sf2.mat"
+```
+
+Example 2 from png image files :
+```
+build/SRmeetsPS-CUDA --dstype="images" --dsloc="./dataset/Images/Mitten"
 ```
