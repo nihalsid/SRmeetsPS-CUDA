@@ -112,7 +112,7 @@ __global__ void mean_across_channels(float* data, int h, int w, int nc, float* m
 float* cuda_based_mean_across_channels(float* data, int h, int w, int nc, uint8_t** d_inpaint_locations) {
 	float* d_data = NULL;
 	float* d_output = NULL;
-	dim3 block(128, 8, 1);
+	dim3 block(Preferences::blockX, Preferences::blockY, 1);
 	dim3 grid((unsigned)(h - 1) / block.x + 1, (unsigned)(w - 1) / block.y + 1, 1);
 	cudaMalloc(&d_data, h * w * nc * sizeof(float)); CUDA_CHECK;
 	cudaMalloc(&d_output, h * w * sizeof(float)); CUDA_CHECK;
@@ -141,7 +141,7 @@ __global__ void initialize_rho(float* rho, int size_c, int nc) {
 float* cuda_based_rho_init(thrust::host_vector<int>& imask, int nc) {
 	float* d_rho = NULL;
 	cudaMalloc(&d_rho, imask.size() * nc * sizeof(float)); CUDA_CHECK;
-	dim3 block(512, 1, 1);
+	dim3 block(Preferences::blockX, 1, 1);
 	dim3 grid((unsigned)(imask.size() - 1) / block.x + 1, (unsigned)(nc - 1) / block.y + 1, 1);
 	initialize_rho << < grid, block >> > (d_rho, (int)imask.size(), nc); CUDA_CHECK;
 	cudaDeviceSynchronize();
@@ -161,7 +161,7 @@ std::pair<float*, float*> cuda_based_meshgrid_create(int w, int h, float K02, fl
 	float* xx = NULL, *yy = NULL;
 	cudaMalloc(&xx, sizeof(float)*w*h); CUDA_CHECK;
 	cudaMalloc(&yy, sizeof(float)*w*h); CUDA_CHECK;
-	dim3 block(32, 8, 1);
+	dim3 block(Preferences::blockX, Preferences::blockY, 1);
 	dim3 grid((unsigned)(w - 1) / block.x + 1, (unsigned)(h - 1) / block.y + 1, 1);
 	meshgrid_create << <grid, block >> > (xx, yy, w, h, K02, K12);
 	cudaDeviceSynchronize();
@@ -212,11 +212,11 @@ float* cuda_based_normal_init(cublasHandle_t cublas_handle, float *d_z, float* d
 		throw std::runtime_error("CUBLAS Library release of resources failed");
 	}
 	cudaStreamCreate(&stream[2]); CUDA_CHECK;
-	third_and_fourth_normal_component << < (unsigned)(npix - 1) / 256 + 1, 256, 0, stream[2] >> > (d_z, d_xx, d_yy, d_zx, d_zy, npix, d_N + npix * 2); CUDA_CHECK;
+	third_and_fourth_normal_component << < (unsigned)(npix - 1) / Preferences::blockX + 1, Preferences::blockX, 0, stream[2] >> > (d_z, d_xx, d_yy, d_zx, d_zy, npix, d_N + npix * 2); CUDA_CHECK;
 	cudaDeviceSynchronize(); CUDA_CHECK;
-	norm_components << < (unsigned)(npix - 1) / 256 + 1, 256 >> > (d_N, npix, *d_dz); CUDA_CHECK;
+	norm_components << < (unsigned)(npix - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_N, npix, *d_dz); CUDA_CHECK;
 	cudaDeviceSynchronize(); CUDA_CHECK;
-	dim3 block(256, 1, 1);
+	dim3 block(Preferences::blockX, 1, 1);
 	dim3 grid((unsigned)(npix - 1) / block.x + 1, 3, 1);
 	normalize_N << < grid, block >> > (d_N, *d_dz, npix); CUDA_CHECK;
 	return d_N;
@@ -385,7 +385,7 @@ __global__ void A_for_lightning_estimation(float* rho, float* N, int npix, float
 float* cuda_based_A_for_lightning(float* d_rho, float* d_N, int npix, int nchannels) {
 	float* d_A;
 	cudaMalloc(&d_A, sizeof(float)*npix * 4 * nchannels);
-	dim3 block(256, 1, 1);
+	dim3 block(Preferences::blockX, 1, 1);
 	dim3 grid((unsigned)(npix - 1) / block.x + 1, (unsigned)(nchannels - 1) / block.y + 1, 4);
 	A_for_lightning_estimation << <grid, block >> > (d_rho, d_N, npix, d_A);
 	cudaDeviceSynchronize();
@@ -468,7 +468,7 @@ void cuda_based_expand_A_to_sparse(cusparseHandle_t cusp_handle, float* d_A, int
 	cudaMalloc(&d_rowind, npix * nimages * sizeof(int)); CUDA_CHECK;
 	cudaMalloc(d_colind, npix * nimages * sizeof(int)); CUDA_CHECK;
 	cudaMalloc(d_val, npix * nimages * sizeof(float)); CUDA_CHECK;
-	fill_A_expansion << <(unsigned)(npix*nimages - 1) / 512 + 1, 512 >> > (d_A, d_rowind, *d_colind, *d_val, npix, nimages); CUDA_CHECK;
+	fill_A_expansion << <(unsigned)(npix*nimages - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_A, d_rowind, *d_colind, *d_val, npix, nimages); CUDA_CHECK;
 	cudaMalloc(d_rowptr, (npix*nimages + 1) * sizeof(int)); CUDA_CHECK;
 	status_cs = cusparseXcoo2csr(cusp_handle, d_rowind, npix*nimages, npix*nimages, *d_rowptr, CUSPARSE_INDEX_BASE_ZERO); CUSPARSE_CHECK(status_cs);
 	cudaFree(d_rowind); CUDA_CHECK;
@@ -484,8 +484,8 @@ void cuda_based_expand_A_to_sparse(cusparseHandle_t cusp_handle, float* d_A, int
 	cudaMalloc(d_AT_col_idx, npix * nimages * sizeof(int)); CUDA_CHECK;
 	cudaMalloc(d_A_val, npix * nimages * sizeof(float)); CUDA_CHECK;
 	cudaMalloc(d_AT_val, npix * nimages * sizeof(float)); CUDA_CHECK;
-	fill_A_expansion << < (unsigned)(npix*nimages - 1) / 512 + 1, 512 >> > (d_A, d_A_row_idx, *d_A_col_idx, *d_A_val, npix, nimages); CUDA_CHECK;
-	fill_AT_expansion << < (unsigned)(npix*nimages - 1) / 512 + 1, 512 >> > (d_A, d_AT_row_idx, *d_AT_col_idx, *d_AT_val, npix, nimages); CUDA_CHECK;
+	fill_A_expansion << < (unsigned)(npix*nimages - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_A, d_A_row_idx, *d_A_col_idx, *d_A_val, npix, nimages); CUDA_CHECK;
+	fill_AT_expansion << < (unsigned)(npix*nimages - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_A, d_AT_row_idx, *d_AT_col_idx, *d_AT_val, npix, nimages); CUDA_CHECK;
 	cudaMalloc(d_A_row_ptr, (npix*nimages + 1) * sizeof(int)); CUDA_CHECK;
 	cudaMalloc(d_AT_row_ptr, (npix + 1) * sizeof(int)); CUDA_CHECK;
 	status_cs = cusparseXcoo2csr(cusp_handle, d_A_row_idx, npix*nimages, npix*nimages, *d_A_row_ptr, CUSPARSE_INDEX_BASE_ZERO); CUSPARSE_CHECK(status_cs);
@@ -574,7 +574,7 @@ void cuda_based_B_ch_for_depth(cublasHandle_t cublas_handle, float* d_s, float* 
 		cudaFree(d_s_last_reordered); CUDA_CHECK;
 	}
 	cudaDeviceSynchronize();
-	dim3 block(256, 1, 1);
+	dim3 block(Preferences::blockX, 1, 1);
 	dim3 grid((unsigned)(npix*nimages - 1) / block.x + 1, (unsigned)(nchannels - 1) / block.y + 1, 1);
 	compute_B_for_depth << < grid, block >> > (d_B, d_rho, d_Ns, npix, nchannels, nimages); CUDA_CHECK;
 	cudaFree(d_Ns); CUDA_CHECK;
@@ -611,7 +611,7 @@ void cuda_based_A_ch_non_sparse(float* d_rho, float* d_dz, float* d_s, float* d_
 		}
 	}
 	cudaDeviceSynchronize();
-	dim3 block(256, 4, 1);
+	dim3 block(Preferences::blockX, Preferences::blockY, 1);
 	dim3 grid((unsigned)(npix - 1) / block.x + 1, (unsigned)(nimages - 1) / block.y + 1, 3);
 	calculate_A_ch_1_2 << <grid, block >> > (d_rho, d_dz, d_s_reordered, d_xx, d_s_reordered + 2 * nimages, K00, npix, nchannels, nimages, d_A_ch1); CUDA_CHECK;
 	calculate_A_ch_1_2 << <grid, block >> > (d_rho, d_dz, d_s_reordered + nimages, d_yy, d_s_reordered + 2 * nimages, K11, npix, nchannels, nimages, d_A_ch2); CUDA_CHECK;
@@ -709,7 +709,7 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 		int* d_A_ch_row_idx = NULL;
 		cudaMalloc(&d_A_ch_row_idx, sizeof(int)*nnz_A_ch[c]); CUDA_CHECK;
 		status_cs = cusparseXcsr2coo(cusp_handle, d_A_ch_row_ptr[c], nnz_A_ch[c], npix*nimages, d_A_ch_row_idx, CUSPARSE_INDEX_BASE_ZERO); CUSPARSE_CHECK(status_cs);
-		add_constant << < (unsigned)(nnz_A_ch[c] - 1) / 256 + 1, 256 >> > (d_A_ch_row_idx, npix*nimages*c, nnz_A_ch[c]); CUDA_CHECK;
+		add_constant << < (unsigned)(nnz_A_ch[c] - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_A_ch_row_idx, npix*nimages*c, nnz_A_ch[c]); CUDA_CHECK;
 		cudaMemcpyAsync(d_A_coo_row_idx + offset_A, d_A_ch_row_idx, sizeof(int) * nnz_A_ch[c], cudaMemcpyDeviceToDevice); CUDA_CHECK;
 		cudaMemcpyAsync(d_A_col_idx + offset_A, d_A_ch_col_idx[c], sizeof(int) * nnz_A_ch[c], cudaMemcpyDeviceToDevice); CUDA_CHECK;
 		cudaMemcpyAsync(d_A_csr_val + offset_A, d_A_ch_val[c], sizeof(float) * nnz_A_ch[c], cudaMemcpyDeviceToDevice); CUDA_CHECK;
@@ -761,8 +761,8 @@ float cuda_based_depth_estimation(cublasHandle_t cublas_handle, cusparseHandle_t
 
 	float* d_KTz = cuda_based_sparsemat_densevec_mul(cusp_handle, d_KT_row_ptr, d_KT_col_idx, d_KT_val, n_rows_KT, n_cols_KT, nnz_KT, d_z);
 	float* d_Az = cuda_based_sparsemat_densevec_mul(cusp_handle, d_A_row_ptr, d_A_col_idx, d_A_csr_val, npix*nchannels*nimages, npix, nnz_A, d_z);
-	squared_difference << < (unsigned)(n_rows_KT - 1) / 256 + 1, 256 >> > (d_KTz, d_z0s, n_rows_KT);
-	squared_difference << < (unsigned)(npix*nchannels*nimages - 1) / 256 + 1, 256 >> > (d_Az, d_B, npix*nchannels*nimages);
+	squared_difference << < (unsigned)(n_rows_KT - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_KTz, d_z0s, n_rows_KT);
+	squared_difference << < (unsigned)(npix*nchannels*nimages - 1) / Preferences::blockX + 1, Preferences::blockX >> > (d_Az, d_B, npix*nchannels*nimages);
 	float t1 = thrust::reduce(thrust::device, THRUST_CAST(d_KTz), THRUST_CAST(d_KTz) + n_rows_KT);
 	float t2 = thrust::reduce(thrust::device, THRUST_CAST(d_Az), THRUST_CAST(d_Az) + npix*nchannels*nimages);
 

@@ -9,25 +9,18 @@
 #include <ctime>
 #include <thrust/host_vector.h>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
 #include <numeric>
 #include <algorithm>
 
-#ifdef _DEBUG
 #define CUDA_CHECK cuda_check(__FILE__,__LINE__)
-#else
-#define CUDA_CHECK 
-#endif
-
-#ifdef _DEBUG
 #define CUSPARSE_CHECK(st) cusparse_check(st)
-#else
-#define CUSPARSE_CHECK(e)
-#endif
-
-#ifdef _DEBUG
 #define CUBLAS_CHECK(st) cublas_check(st)
+
+#ifdef WIN32
+#define PATH_SEPARATOR "\\"
 #else
-#define CUBLAS_CHECK(e)
+#define PATH_SEPARATOR "/"
 #endif
 
 void cuda_check(std::string file, int line);
@@ -174,7 +167,7 @@ struct DataHandler {
 
 	float* I; // h x w x c x n
 	int I_w, I_h, I_c, I_n;
-	int Z0_w, Z0_h;
+	int z0_w, z0_h;
 	float* K; // 3 x 3
 	float* mask; // h x w x c
 	float sf;
@@ -183,12 +176,19 @@ struct DataHandler {
 	SparseCOO<float> D;
 	DataHandler();
 	~DataHandler();
+	void freeMemory();
+	void initializeDownsamplingMatrix();
+};
+
+struct MatFileDataHandler: public DataHandler {
 	matvar_t* readVariableFromFile(mat_t * matfp, const char * varname);
 	void extractAndCastToFromDoubleToFloat(float * dest, void * source, int length);
 	void extractAndCastToFromIntToFloat(float * dest, void * source, int length);
-	void freeMemory();
-	void loadDataFromMatFiles(char * filename);
+	void loadDataFromMatFiles(const char * filename);
+};
 
+struct ImageDataHandler : public DataHandler {
+	void loadDataFromImages(const char* dataFolder);
 };
 
 class Timer
@@ -219,4 +219,12 @@ private:
 	clock_t tStart;
 	bool running;
 	float sec;
+};
+
+struct Preferences {
+	static int blockX;
+	static int blockY;
+	static int deviceId;
+private:
+	Preferences() {}
 };
