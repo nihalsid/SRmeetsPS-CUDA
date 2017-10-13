@@ -29,6 +29,7 @@ make
 ```
 
 To run, the follwing options are available:
+```
 	--blockx, -x (value:256)
 		block dimension x
 	--blocky, -y (value:4)
@@ -41,6 +42,7 @@ To run, the follwing options are available:
 		dataset type, can be matlab or images
 	-h, --help, --usage
 		print help
+```
 
 Example 1 from mat files :
 ```
