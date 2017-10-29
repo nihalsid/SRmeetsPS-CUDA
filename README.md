@@ -3,7 +3,7 @@
 This repository contains CUDA implementation  for the paper:  
 Songyou Peng, Bjoern Haefner, Yvain Queau and Daniel Cremers, "**[Depth Super-Resolution Meets Uncalibrated Photometric Stereo](https://arxiv.org/abs/1708.00411)**", In IEEE Conference on Computer Vision (ICCV) Workshop, 2017.
 
-Original implementation: https://github.com/pengsongyou/SRmeetsPS
+Original implementation in MATLAB can be found [here](https://github.com/pengsongyou/SRmeetsPS).
 
 ## Citation
 If you use this code, please cite the paper:
@@ -17,39 +17,39 @@ If you use this code, please cite the paper:
 ```
 Contact **Songyou Peng** [:envelope:](mailto:psy920710@gmail.com) for questions, comments and reporting bugs.
 
+## Building and Running
 
+### Linux
 
-
-
-### Building and running
-In the root folder run
-```
-export LD_LIBRARY_PATH=./opencv/lib:./matio/lib
+Move to the linux build folder and compile using the makefile. Specifically, from the project root, execute the following commands:
+``` 
+cd build/linux
 make
+export LD_LIBRARY_PATH=../../opencv/lib:../../matio/lib
 ```
 
-To run, the follwing options are available:
+Following command line options are available while running:
+| Option        | Description           | Default Value  |
+| ------------- |-------------| -----|
+|``--blockx``<br>``-x``      | CUDA kernel block's x dimension | 256 |
+|``--blockx``<br>``-x``      | CUDA kernel block's y dimension      | 4 |
+|``-d``<br>``--dsloc`` | Path to dataset as mat file or folder containing<br>images (depth images must be 16bit)      |    ``../../dataset/Images/Mitten`` |
+|``-device``<br>``--g`` | CUDA device to run the application on | 0 |
+|``-dstype``<br>``--t`` | Dataset type, can be as ``matlab`` for MAT file<br>input or ``images`` for images as input,with depth<br>images having bitdepth 16 | ``images`` |
+
+#### Example commands 
+When using MATLAB mat files as the input dataset, from the ``PROJECT_ROOT/build/linux`` folder, run the command
 ```
-	--blockx, -x (value:256)
-		block dimension x
-	--blocky, -y (value:4)
-		block dimension y
-	-d, --dsloc (value:./dataset/Images/Mitten)
-		path to dataset mat file or folder containing images
-	--device, -g (value:0)
-		cuda device to run the application on
-	--dstype, -t (value:images)
-		dataset type, can be matlab or images
-	-h, --help, --usage
-		print help
+./bin/SRmeetsPS-CUDA --dstype="matlab" --dsloc="../../dataset/Matlab/mitten_sf2.mat"
 ```
 
-Example 1 from mat files :
+When using image files as input, run
 ```
-build/SRmeetsPS-CUDA --dstype="matlab" --dsloc="./dataset/Matlab/mitten_sf2.mat"
+./bin/SRmeetsPS-CUDA --dstype="images" --dsloc="../../dataset/Images/Mitten"
 ```
 
-Example 2 from png image files :
-```
-build/SRmeetsPS-CUDA --dstype="images" --dsloc="./dataset/Images/Mitten"
-```
+## Benchmark comparison against Matlab implementation
+
+![alt text](https://user-images.githubusercontent.com/932110/32146523-320647c4-bcd9-11e7-9098-e6ca43c38318.png "Small GPU")
+
+![alt text](https://user-images.githubusercontent.com/932110/32146522-31e5fc1c-bcd9-11e7-8323-e39bc45454e2.png "Small GPU")
