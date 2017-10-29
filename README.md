@@ -34,7 +34,7 @@ Following command line options are available while running:
 | ------------- |-------------| -----|
 |``--blockx``<br>``-x``      | CUDA kernel block's x dimension | 256 |
 |``--blockx``<br>``-x``      | CUDA kernel block's y dimension      | 4 |
-|``-d``<br>``--dsloc`` | Path to dataset as mat file or folder containing<br>images (depth images must be 16bit)      |    ``../../dataset/Images/Mitten`` |
+|``-d``<br>``--dsloc`` | Path to dataset as mat file or folder containing<br>images (depth images must be 16bit) ||
 |``-device``<br>``--g`` | CUDA device to run the application on | 0 |
 |``-dstype``<br>``--t`` | Dataset type, can be as ``matlab`` for MAT file<br>input or ``images`` for images as input,with depth<br>images having bitdepth 16 | ``images`` |
 
@@ -48,6 +48,10 @@ When using image files as input, run
 ```
 ./bin/SRmeetsPS-CUDA --dstype="images" --dsloc="../../dataset/Images/Mitten"
 ```
+
+### Windows
+
+A Visual Studio 2014 solution project can be found in ``PROJECT_ROOT\build\windows``. Unlike the linux project, the dependent libraries are not checked in the repository, and requires OpenCV 3.3 and matio 1.5.10 binaries to build and run. 
 
 ## Benchmark comparison against Matlab implementation
 
