@@ -29,6 +29,7 @@ export LD_LIBRARY_PATH=../../opencv/lib:../../matio/lib
 ```
 
 Following command line options are available while running:
+
 | Option        | Description           | Default Value  |
 | ------------- |-------------| -----|
 |``--blockx``<br>``-x``      | CUDA kernel block's x dimension | 256 |
